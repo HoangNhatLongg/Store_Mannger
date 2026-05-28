@@ -6,14 +6,14 @@ Hệ thống quản lý cửa hàng tạp hóa với tích hợp AI OCR.
 
 ## Thông tin dự án
 
-| Thông tin | Chi tiết |
-|-----------|----------|
-| **Tên dự án** | Store Manager |
-| **Phiên bản** | 1.0.0 |
-| **Framework** | Next.js 15 + TypeScript |
-| **Database** | PostgreSQL + Prisma ORM |
+| Thông tin      | Chi tiết                   |
+| -------------- | -------------------------- |
+| **Tên dự án**  | Store Manager              |
+| **Phiên bản**  | 1.0.0                      |
+| **Framework**  | Next.js 15 + TypeScript    |
+| **Database**   | PostgreSQL + Prisma ORM    |
 | **UI Library** | TailwindCSS v4 + Shadcn UI |
-| **Trạng thái** | Đang phát triển |
+| **Trạng thái** | Đang phát triển            |
 
 ## Tech Stack
 
@@ -176,19 +176,19 @@ Xem chi tiết tại [docs/database.md](./docs/database.md)
 
 ### Entities chính:
 
-| Entity | Mô tả |
-|--------|--------|
-| User | Người dùng hệ thống |
-| Category | Danh mục sản phẩm |
-| Product | Sản phẩm |
-| Supplier | Nhà cung cấp |
-| Customer | Khách hàng |
-| ImportInvoice | Hóa đơn nhập hàng |
-| ImportInvoiceItem | Chi tiết nhập hàng |
-| SaleInvoice | Hóa đơn bán hàng |
-| SaleInvoiceItem | Chi tiết bán hàng |
-| Setting | Cài đặt hệ thống |
-| AuditLog | Nhật ký hệ thống |
+| Entity            | Mô tả               |
+| ----------------- | ------------------- |
+| User              | Người dùng hệ thống |
+| Category          | Danh mục sản phẩm   |
+| Product           | Sản phẩm            |
+| Supplier          | Nhà cung cấp        |
+| Customer          | Khách hàng          |
+| ImportInvoice     | Hóa đơn nhập hàng   |
+| ImportInvoiceItem | Chi tiết nhập hàng  |
+| SaleInvoice       | Hóa đơn bán hàng    |
+| SaleInvoiceItem   | Chi tiết bán hàng   |
+| Setting           | Cài đặt hệ thống    |
+| AuditLog          | Nhật ký hệ thống    |
 
 ## Scripts
 
@@ -197,23 +197,6 @@ npm run dev          # Start development server
 npm run build         # Build for production
 npm run start         # Start production server
 npm run lint          # Run ESLint
-```
-
-## Environment Variables
-
-```env
-# Database
-DATABASE_URL="postgresql://store_admin:store_password@localhost:5432/store_manager"
-
-# NextAuth
-NEXTAUTH_URL="http://localhost:3000"
-NEXTAUTH_SECRET="your-secret-key"
-
-# 9Router AI OCR
-NINEROUTER_API_KEY=""
-
-# Default AI Model
-DEFAULT_AI_MODEL="gpt-4o"
 ```
 
 ## License
