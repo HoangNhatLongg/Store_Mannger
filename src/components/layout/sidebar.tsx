@@ -1,7 +1,7 @@
-"use client";
+'use client';
 
-import Link from "next/link";
-import { usePathname } from "next/navigation";
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard,
   Package,
@@ -18,23 +18,23 @@ import {
   Truck,
   Ruler,
   TrendingUp,
-} from "lucide-react";
-import { useState } from "react";
-import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
+} from 'lucide-react';
+import { useState } from 'react';
+import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
 
 const navigation = [
-  { name: "Dashboard", href: "/", icon: LayoutDashboard },
-  { name: "Sản phẩm", href: "/products", icon: Package },
-  { name: "Danh mục", href: "/categories", icon: Tags },
-  { name: "Đơn vị", href: "/units", icon: Ruler },
-  { name: "Nhà cung cấp", href: "/suppliers", icon: Truck },
-  { name: "Nhập hàng", href: "/import", icon: FileText },
-  { name: "Bán hàng", href: "/sales", icon: ShoppingCart },
-  { name: "Doanh thu", href: "/revenue", icon: TrendingUp },
-  { name: "Tồn kho", href: "/inventory", icon: Archive },
-  { name: "AI OCR", href: "/ai-ocr", icon: Bot },
-  { name: "Cài đặt", href: "/settings", icon: Settings },
+  { name: 'Dashboard', href: '/', icon: LayoutDashboard },
+  { name: 'Sản phẩm', href: '/products', icon: Package },
+  { name: 'Danh mục', href: '/categories', icon: Tags },
+  { name: 'Đơn vị', href: '/units', icon: Ruler },
+  { name: 'Nhà cung cấp', href: '/suppliers', icon: Truck },
+  { name: 'Nhập hàng', href: '/import', icon: FileText },
+  { name: 'Bán hàng', href: '/sales', icon: ShoppingCart },
+  { name: 'Doanh thu', href: '/revenue', icon: TrendingUp },
+  { name: 'Tồn kho', href: '/inventory', icon: Archive },
+  { name: 'AI OCR', href: '/ai-ocr', icon: Bot },
+  { name: 'Cài đặt', href: '/settings', icon: Settings },
 ];
 
 export function Sidebar() {
@@ -63,34 +63,46 @@ export function Sidebar() {
       {/* Sidebar */}
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-40 flex flex-col transition-all duration-300",
-          isCollapsed ? "w-[72px]" : "w-64",
-          isMobileMenuOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
+          'fixed inset-y-0 left-0 z-40 flex flex-col transition-all duration-300',
+          isCollapsed ? 'w-[72px]' : 'w-64',
+          isMobileMenuOpen
+            ? 'translate-x-0'
+            : '-translate-x-full lg:translate-x-0',
         )}
       >
-        <div className={cn(
-          "flex flex-col h-full bg-background",
-          !isCollapsed && "border-r border-border/50"
-        )}>
+        <div
+          className={cn(
+            'flex flex-col h-full bg-background',
+            !isCollapsed && 'border-r border-border/50',
+          )}
+        >
           {/* Logo */}
-          <div className={cn(
-            "flex items-center h-16 px-4",
-            isCollapsed ? "justify-center" : "justify-between"
-          )}>
+          <div
+            className={cn(
+              'flex items-center h-16 px-4',
+              isCollapsed ? 'justify-center' : 'justify-between',
+            )}
+          >
             {!isCollapsed && (
               <Link href="/" className="flex items-center gap-3">
                 <div className="h-9 w-9 rounded-xl bg-primary flex items-center justify-center shadow-sm">
-                  <span className="text-lg font-bold text-primary-foreground">S</span>
+                  <span className="text-lg font-bold text-primary-foreground">
+                    S
+                  </span>
                 </div>
                 <div>
                   <h1 className="text-lg font-semibold">Store Manager</h1>
-                  <p className="text-xs text-muted-foreground">AI-powered</p>
+                  <p className="text-xs text-muted-foreground">
+                    Quản lý tự động
+                  </p>
                 </div>
               </Link>
             )}
             {isCollapsed && (
               <div className="h-9 w-9 rounded-xl bg-primary flex items-center justify-center shadow-sm">
-                <span className="text-lg font-bold text-primary-foreground">S</span>
+                <span className="text-lg font-bold text-primary-foreground">
+                  S
+                </span>
               </div>
             )}
           </div>
@@ -105,15 +117,18 @@ export function Sidebar() {
                   href={item.href}
                   onClick={() => setIsMobileMenuOpen(false)}
                   className={cn(
-                    "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200",
+                    'flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200',
                     isActive
-                      ? "bg-primary/10 text-primary"
-                      : "text-muted-foreground hover:bg-muted hover:text-foreground",
-                    isCollapsed && "justify-center px-2"
+                      ? 'bg-primary/10 text-primary'
+                      : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                    isCollapsed && 'justify-center px-2',
                   )}
                   title={isCollapsed ? item.name : undefined}
                 >
-                  <item.icon size={20} className={cn(isActive && "text-primary")} />
+                  <item.icon
+                    size={20}
+                    className={cn(isActive && 'text-primary')}
+                  />
                   {!isCollapsed && <span>{item.name}</span>}
                 </Link>
               );
