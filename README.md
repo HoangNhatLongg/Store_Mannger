@@ -1,19 +1,19 @@
 # Store Manager - AI Grocery Store Management System
 
-Hệ thống quản lý cửa hàng tạp hóa với tích hợp AI OCR.
+Hệ thống quản lý cửa hàng tạp hóa với tích hợp AI OCR, tự động hóa và thống kê doanh thu.
 
-> **Dự án học tập** - Xây dựng hệ thống quản lý cửa hàng tạp hóa với các tính năng hiện đại và tích hợp AI.
+> **Dự án học tập** - Xây dựng hệ thống quản lý cửa hàng với các tính năng hiện đại.
 
 ## Thông tin dự án
 
-| Thông tin      | Chi tiết                   |
-| -------------- | -------------------------- |
-| **Tên dự án**  | Store Manager              |
-| **Phiên bản**  | 1.0.0                      |
-| **Framework**  | Next.js 15 + TypeScript    |
-| **Database**   | PostgreSQL + Prisma ORM    |
+| Thông tin | Chi tiết |
+|---|---|
+| **Tên dự án** | Store Manager |
+| **Phiên bản** | 1.0.0 |
+| **Framework** | Next.js 15 + TypeScript |
+| **Database** | PostgreSQL + Prisma ORM |
 | **UI Library** | TailwindCSS v4 + Shadcn UI |
-| **Trạng thái** | Đang phát triển            |
+| **Trạng thái** | Đang phát triển |
 
 ## Tech Stack
 
@@ -26,16 +26,31 @@ Hệ thống quản lý cửa hàng tạp hóa với tích hợp AI OCR.
 
 ## Tính năng
 
-- [x] Dashboard với thống kê
-- [x] Quản lý sản phẩm (CRUD)
-- [x] Quản lý danh mục
-- [x] Quản lý nhập hàng (với AI OCR)
-- [x] Quản lý bán hàng (POS)
-- [x] Quản lý tồn kho
-- [x] AI OCR nhận diện hóa đơn (9Router)
-- [x] Hỗ trợ nhiều AI Model
-- [x] Responsive UI với Dark Mode
+### Quản lý cơ bản
+- [x] Dashboard với thống kê tổng quan
+- [x] Quản lý sản phẩm (CRUD, hình ảnh, mã vạch)
+- [x] Quản lý danh mục sản phẩm
+- [x] Quản lý đơn vị tính
+- [x] Quản lý nhà cung cấp
+- [x] Quản lý khách hàng
+
+### Nghiệp vụ
+- [x] Nhập hàng với AI OCR nhận diện hóa đơn
+- [x] Bán hàng (POS) với nhiều phương thức thanh toán
+- [x] Quản lý tồn kho theo thời gian thực
+- [x] Quản lý doanh thu theo ngày/tháng/năm
+- [x] Biểu đồ thống kê doanh thu trực quan
+
+### AI & Tự động hóa
+- [x] AI OCR nhận diện hóa đơn nhập hàng
+- [x] Hỗ trợ nhiều AI Model (GPT-4o, Claude, Gemini, Mistral)
+- [x] Tạo sản phẩm tự động từ OCR
+
+### Hệ thống
+- [x] Authentication với NextAuth.js
 - [x] Audit Log theo dõi thay đổi
+- [x] Responsive UI với Dark Mode
+- [x] Cài đặt hệ thống
 
 ## Getting Started
 
@@ -147,26 +162,29 @@ store-manager/
 │   ├── app/                    # Next.js App Router
 │   │   ├── page.tsx           # Dashboard
 │   │   ├── products/          # Products management
-│   │   ├── categories/        # Categories management
+│   │   ├── categories/         # Categories management
+│   │   ├── units/             # Units management
+│   │   ├── suppliers/         # Suppliers management
+│   │   ├── customers/         # Customers management
 │   │   ├── import/            # Import invoices
-│   │   ├── sales/            # Sales POS
-│   │   ├── inventory/        # Inventory management
-│   │   ├── ai-ocr/           # AI OCR settings
+│   │   ├── sales/             # Sales POS
+│   │   ├── revenue/           # Revenue management
+│   │   ├── inventory/         # Inventory management
+│   │   ├── ai-ocr/            # AI OCR settings
 │   │   ├── settings/          # App settings
 │   │   └── api/               # API routes
 │   ├── components/
-│   │   ├── ui/               # Shadcn UI components
-│   │   └── layout/           # Layout components
+│   │   ├── ui/                # Shadcn UI components
+│   │   └── layout/            # Layout components
 │   ├── lib/
-│   │   ├── prisma.ts         # Prisma client
-│   │   └── utils.ts          # Utilities
-│   ├── services/             # Business logic
-│   └── types/                # TypeScript types
+│   │   ├── prisma.ts          # Prisma client
+│   │   └── utils.ts           # Utilities
+│   └── types/                 # TypeScript types
 ├── prisma/
-│   └── schema.prisma         # Database schema
+│   └── schema.prisma          # Database schema
 ├── docs/
-│   └── database.md           # Database documentation
-├── docker-compose.yml        # Docker configuration
+│   └── database.md            # Database documentation
+├── docker-compose.yml         # Docker configuration
 └── package.json
 ```
 
@@ -174,29 +192,30 @@ store-manager/
 
 Xem chi tiết tại [docs/database.md](./docs/database.md)
 
-### Entities chính:
+### Entities chính
 
-| Entity            | Mô tả               |
-| ----------------- | ------------------- |
-| User              | Người dùng hệ thống |
-| Category          | Danh mục sản phẩm   |
-| Product           | Sản phẩm            |
-| Supplier          | Nhà cung cấp        |
-| Customer          | Khách hàng          |
-| ImportInvoice     | Hóa đơn nhập hàng   |
-| ImportInvoiceItem | Chi tiết nhập hàng  |
-| SaleInvoice       | Hóa đơn bán hàng    |
-| SaleInvoiceItem   | Chi tiết bán hàng   |
-| Setting           | Cài đặt hệ thống    |
-| AuditLog          | Nhật ký hệ thống    |
+| Entity | Mô tả |
+|---|---|
+| User | Người dùng hệ thống |
+| Category | Danh mục sản phẩm |
+| Product | Sản phẩm |
+| Unit | Đơn vị tính |
+| Supplier | Nhà cung cấp |
+| Customer | Khách hàng |
+| ImportInvoice | Hóa đơn nhập hàng |
+| ImportInvoiceItem | Chi tiết nhập hàng |
+| SaleInvoice | Hóa đơn bán hàng |
+| SaleInvoiceItem | Chi tiết bán hàng |
+| Setting | Cài đặt hệ thống |
+| AuditLog | Nhật ký hệ thống |
 
 ## Scripts
 
 ```bash
 npm run dev          # Start development server
-npm run build         # Build for production
-npm run start         # Start production server
-npm run lint          # Run ESLint
+npm run build        # Build for production
+npm run start        # Start production server
+npm run lint         # Run ESLint
 ```
 
 ## License

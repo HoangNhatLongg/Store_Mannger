@@ -72,7 +72,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { name, sku, categoryId, importPrice, sellPrice, stock, minStock, description, image } = body;
+    const { name, sku, categoryId, importPrice, sellPrice, stock, minStock, description, image, imageUrl } = body;
 
     if (!name || !sku || !categoryId || importPrice === undefined || sellPrice === undefined) {
       return NextResponse.json(
@@ -109,7 +109,7 @@ export async function POST(request: NextRequest) {
         stock: parseInt(stock) || 0,
         minStock: parseInt(minStock) || 10,
         description,
-        image,
+        imageUrl: imageUrl || image || null,
       },
       include: {
         category: {

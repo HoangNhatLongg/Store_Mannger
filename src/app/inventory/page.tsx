@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { MainLayout } from "@/components/layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,69 +14,172 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Package,
   AlertTriangle,
   TrendingUp,
   TrendingDown,
   Search,
-  Filter,
   Download,
+  Loader2,
+  ChevronLeft,
+  ChevronRight,
+  RefreshCw,
 } from "lucide-react";
+import Link from "next/link";
 
-const inventoryStats = [
-  {
-    title: "Tổng sản phẩm",
-    value: "156",
-    icon: Package,
-    bgColor: "bg-blue-50 dark:bg-blue-950/50",
-    iconColor: "text-blue-600 dark:text-blue-400",
-  },
-  {
-    title: "Sắp hết hàng",
-    value: "8",
-    icon: AlertTriangle,
-    bgColor: "bg-amber-50 dark:bg-amber-950/50",
-    iconColor: "text-amber-600 dark:text-amber-400",
-  },
-  {
-    title: "Hàng tăng giá",
-    value: "3",
-    icon: TrendingUp,
-    bgColor: "bg-red-50 dark:bg-red-950/50",
-    iconColor: "text-red-600 dark:text-red-400",
-  },
-  {
-    title: "Hàng giảm giá",
-    value: "5",
-    icon: TrendingDown,
-    bgColor: "bg-emerald-50 dark:bg-emerald-950/50",
-    iconColor: "text-emerald-600 dark:text-emerald-400",
-  },
-];
+interface Category {
+  id: string;
+  name: string;
+  slug: string;
+}
 
-const inventoryData = [
-  { id: "1", name: "Mì Hảo Hảo", sku: "MI001", stock: 150, minStock: 20, status: "normal", category: "Mì ăn liền" },
-  { id: "2", name: "Nước ngọt Coca", sku: "NC001", stock: 80, minStock: 30, status: "normal", category: "Nước giải khát" },
-  { id: "3", name: "Bánh Oreo", sku: "BO001", stock: 45, minStock: 50, status: "low", category: "Bánh kẹo" },
-  { id: "4", name: "Sữa tươi Vinamilk", sku: "SV001", stock: 60, minStock: 25, status: "normal", category: "Sữa" },
-  { id: "5", name: "Bia Tiger lon", sku: "BT001", stock: 100, minStock: 40, status: "normal", category: "Bia" },
-  { id: "6", name: "Cà phê G7", sku: "CG001", stock: 15, minStock: 30, status: "low", category: "Cà phê" },
-  { id: "7", name: "Nước suối Lavie", sku: "NS001", stock: 300, minStock: 50, status: "normal", category: "Nước giải khát" },
-  { id: "8", name: "Bánh KitKat", sku: "BK001", stock: 75, minStock: 20, status: "normal", category: "Bánh kẹo" },
-];
+interface Product {
+  id: string;
+  name: string;
+  sku: string;
+  stock: number;
+  minStock: number;
+  sellPrice: number;
+  importPrice: number;
+  category: Category;
+}
+
+interface Pagination {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+}
+
+const formatCurrency = (value: number) => {
+  return new Intl.NumberFormat("vi-VN", {
+    style: "currency",
+    currency: "VND",
+    minimumFractionDigits: 0,
+  }).format(value);
+};
 
 export default function InventoryPage() {
+  const [products, setProducts] = useState<Product[]>([]);
+  const [pagination, setPagination] = useState<Pagination>({
+    page: 1,
+    limit: 20,
+    total: 0,
+    totalPages: 0,
+  });
+  const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
+  const [categoryFilter, setCategoryFilter] = useState("all");
+  const [categories, setCategories] = useState<Category[]>([]);
 
-  const filteredData = inventoryData.filter((item) => {
-    const matchesSearch =
-      item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.sku.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesFilter =
-      filterStatus === "all" || item.status === filterStatus;
-    return matchesSearch && matchesFilter;
+  // Load data
+  useEffect(() => {
+    const loadData = async () => {
+      // Load categories
+      try {
+        const catRes = await fetch("/api/categories");
+        if (catRes.ok) {
+          const catData = await catRes.json();
+          setCategories(Array.isArray(catData) ? catData : []);
+        }
+      } catch (e) {
+        console.error("Error loading categories:", e);
+      }
+    };
+    loadData();
+  }, []);
+
+  // Load products with debounce
+  useEffect(() => {
+    const timeoutId = setTimeout(async () => {
+      setIsLoading(true);
+      try {
+        const params = new URLSearchParams({
+          page: pagination.page.toString(),
+          limit: pagination.limit.toString(),
+          search: searchTerm,
+        });
+        const res = await fetch(`/api/products?${params}`);
+        if (res.ok) {
+          const data = await res.json();
+          setProducts(data.products || []);
+          setPagination((prev) => ({
+            ...prev,
+            total: data.pagination?.total || 0,
+            totalPages: data.pagination?.totalPages || 0,
+          }));
+        }
+      } catch (e) {
+        console.error("Error loading products:", e);
+      } finally {
+        setIsLoading(false);
+      }
+    }, 300);
+    return () => clearTimeout(timeoutId);
+  }, [pagination.page, pagination.limit, searchTerm]);
+
+  const filteredProducts = products.filter((product) => {
+    if (categoryFilter !== "all" && product.category?.id !== categoryFilter) {
+      return false;
+    }
+    if (filterStatus === "low" && product.stock > product.minStock) {
+      return false;
+    }
+    if (filterStatus === "normal" && product.stock <= product.minStock) {
+      return false;
+    }
+    return true;
   });
+
+  const totalProducts = products.length;
+  const lowStockCount = products.filter((p) => p.stock <= p.minStock && p.stock > 0).length;
+  const outOfStockCount = products.filter((p) => p.stock === 0).length;
+
+  const stats = [
+    {
+      title: "Tổng sản phẩm",
+      value: pagination.total.toString(),
+      icon: Package,
+      bgColor: "bg-blue-50 dark:bg-blue-950/50",
+      iconColor: "text-blue-600 dark:text-blue-400",
+    },
+    {
+      title: "Sắp hết hàng",
+      value: lowStockCount.toString(),
+      icon: AlertTriangle,
+      bgColor: "bg-amber-50 dark:bg-amber-950/50",
+      iconColor: "text-amber-600 dark:text-amber-400",
+    },
+    {
+      title: "Hết hàng",
+      value: outOfStockCount.toString(),
+      icon: TrendingDown,
+      bgColor: "bg-red-50 dark:bg-red-950/50",
+      iconColor: "text-red-600 dark:text-red-400",
+    },
+    {
+      title: "Còn hàng",
+      value: (totalProducts - lowStockCount - outOfStockCount).toString(),
+      icon: TrendingUp,
+      bgColor: "bg-emerald-50 dark:bg-emerald-950/50",
+      iconColor: "text-emerald-600 dark:text-emerald-400",
+    },
+  ];
+
+  const handleRefresh = () => {
+    setPagination((prev) => ({ ...prev, page: 1 }));
+    setSearchTerm("");
+    setFilterStatus("all");
+    setCategoryFilter("all");
+  };
 
   return (
     <MainLayout>
@@ -89,15 +192,21 @@ export default function InventoryPage() {
               Theo dõi và quản lý hàng tồn kho
             </p>
           </div>
-          <Button variant="outline" className="rounded-full">
-            <Download className="mr-2 h-4 w-4" />
-            Xuất báo cáo
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={handleRefresh} className="rounded-xl">
+              <RefreshCw className="mr-2 h-4 w-4" />
+              Làm mới
+            </Button>
+            <Button variant="outline" className="rounded-full">
+              <Download className="mr-2 h-4 w-4" />
+              Xuất báo cáo
+            </Button>
+          </div>
         </div>
 
         {/* Stats Cards */}
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          {inventoryStats.map((stat, index) => (
+          {stats.map((stat, index) => (
             <div
               key={index}
               className="bg-card rounded-2xl p-5 hover:shadow-md transition-shadow"
@@ -123,9 +232,31 @@ export default function InventoryPage() {
               placeholder="Tìm kiếm sản phẩm..."
               className="pl-10 bg-muted/50 rounded-xl border-0"
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                setPagination((prev) => ({ ...prev, page: 1 }));
+              }}
             />
           </div>
+          <Select
+            value={categoryFilter}
+            onValueChange={(value) => {
+              setCategoryFilter(value);
+              setPagination((prev) => ({ ...prev, page: 1 }));
+            }}
+          >
+            <SelectTrigger className="w-[180px] rounded-xl">
+              <SelectValue placeholder="Danh mục" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Tất cả danh mục</SelectItem>
+              {categories.map((cat) => (
+                <SelectItem key={cat.id} value={cat.id}>
+                  {cat.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <div className="flex gap-2">
             <Button
               variant={filterStatus === "all" ? "default" : "outline"}
@@ -159,37 +290,127 @@ export default function InventoryPage() {
                 <TableHead className="w-[100px]">SKU</TableHead>
                 <TableHead>Tên sản phẩm</TableHead>
                 <TableHead>Danh mục</TableHead>
+                <TableHead className="text-right">Giá nhập</TableHead>
+                <TableHead className="text-right">Giá bán</TableHead>
                 <TableHead className="text-center">Tồn kho</TableHead>
                 <TableHead className="text-center">Tối thiểu</TableHead>
                 <TableHead className="text-center">Trạng thái</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredData.map((item) => (
-                <TableRow key={item.id}>
-                  <TableCell className="font-medium">{item.sku}</TableCell>
-                  <TableCell className="font-medium">{item.name}</TableCell>
-                  <TableCell>
-                    <Badge variant="secondary">{item.category}</Badge>
-                  </TableCell>
-                  <TableCell className="text-center font-medium">
-                    {item.stock}
-                  </TableCell>
-                  <TableCell className="text-center text-muted-foreground">
-                    {item.minStock}
-                  </TableCell>
-                  <TableCell className="text-center">
-                    <Badge
-                      variant={item.status === "normal" ? "success" : "warning"}
-                    >
-                      {item.status === "normal" ? "Còn hàng" : "Sắp hết"}
-                    </Badge>
+              {isLoading ? (
+                <TableRow>
+                  <TableCell colSpan={8} className="text-center py-8">
+                    <Loader2 className="h-6 w-6 animate-spin mx-auto text-muted-foreground" />
                   </TableCell>
                 </TableRow>
-              ))}
+              ) : filteredProducts.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                    Không có sản phẩm nào
+                  </TableCell>
+                </TableRow>
+              ) : (
+                filteredProducts.map((product) => {
+                  const isLowStock = product.stock <= product.minStock && product.stock > 0;
+                  const isOutOfStock = product.stock === 0;
+
+                  return (
+                    <TableRow key={product.id}>
+                      <TableCell className="font-medium">{product.sku}</TableCell>
+                      <TableCell>
+                        <Link
+                          href={`/products/${product.id}`}
+                          className="font-medium hover:text-primary"
+                        >
+                          {product.name}
+                        </Link>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="secondary">
+                          {product.category?.name || "Không có"}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-right text-muted-foreground">
+                        {formatCurrency(product.importPrice)}
+                      </TableCell>
+                      <TableCell className="text-right font-medium text-primary">
+                        {formatCurrency(product.sellPrice)}
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <span
+                          className={`font-medium ${
+                            isOutOfStock
+                              ? "text-red-600"
+                              : isLowStock
+                              ? "text-amber-600"
+                              : ""
+                          }`}
+                        >
+                          {product.stock}
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-center text-muted-foreground">
+                        {product.minStock}
+                      </TableCell>
+                      <TableCell className="text-center">
+                        {isOutOfStock ? (
+                          <Badge variant="destructive">Hết hàng</Badge>
+                        ) : isLowStock ? (
+                          <Badge className="bg-amber-100 text-amber-700 hover:bg-amber-100">
+                            Sắp hết
+                          </Badge>
+                        ) : (
+                          <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100">
+                            Còn hàng
+                          </Badge>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
+              )}
             </TableBody>
           </Table>
         </div>
+
+        {/* Pagination */}
+        {pagination.totalPages > 1 && (
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-muted-foreground">
+              Hiển thị {(pagination.page - 1) * pagination.limit + 1} -{" "}
+              {Math.min(pagination.page * pagination.limit, pagination.total)} của{" "}
+              {pagination.total} sản phẩm
+            </p>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="rounded-xl"
+                disabled={pagination.page === 1}
+                onClick={() =>
+                  setPagination((prev) => ({ ...prev, page: prev.page - 1 }))
+                }
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <span className="px-4 py-2 text-sm">
+                Trang {pagination.page} / {pagination.totalPages}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                className="rounded-xl"
+                disabled={pagination.page === pagination.totalPages}
+                onClick={() =>
+                  setPagination((prev) => ({ ...prev, page: prev.page + 1 }))
+                }
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
     </MainLayout>
   );

@@ -42,12 +42,14 @@ interface QuickAddProductDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSuccess: (product: Product) => void;
+  defaultCategoryId?: string;
 }
 
 export function QuickAddProductDialog({
   open,
   onOpenChange,
   onSuccess,
+  defaultCategoryId,
 }: QuickAddProductDialogProps) {
   const [categories, setCategories] = useState<Category[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -65,8 +67,12 @@ export function QuickAddProductDialog({
   useEffect(() => {
     if (open) {
       fetchCategories();
+      // Set default category if provided
+      if (defaultCategoryId) {
+        setFormData(prev => ({ ...prev, categoryId: defaultCategoryId }));
+      }
     }
-  }, [open]);
+  }, [open, defaultCategoryId]);
 
   const fetchCategories = async () => {
     try {

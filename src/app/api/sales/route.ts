@@ -9,27 +9,7 @@ function generateInvoiceNumber() {
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   const random = Math.floor(Math.random() * 10000).toString().padStart(4, "0");
-  return `PN-${year}${month}${day}-${random}`;
-}
-
-function generateSku(name: string) {
-  const prefix = name
-    .toUpperCase()
-    .replace(/[^A-Z0-9]/g, "")
-    .substring(0, 3);
-  const random = Math.floor(Math.random() * 10000)
-    .toString()
-    .padStart(4, "0");
-  return `${prefix || "PRO"}-${random}`;
-}
-
-function generateSlug(name: string) {
-  return name
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "") + "-" + Date.now().toString(36);
+  return `BH-${year}${month}${day}-${random}`;
 }
 
 export async function GET(request: NextRequest) {
@@ -43,7 +23,7 @@ export async function GET(request: NextRequest) {
     const page = parseInt(searchParams.get("page") || "1");
     const limit = parseInt(searchParams.get("limit") || "20");
     const search = searchParams.get("search") || "";
-    const supplierId = searchParams.get("supplierId");
+    const customerId = searchParams.get("customerId");
     const status = searchParams.get("status");
     const startDate = searchParams.get("startDate");
     const endDate = searchParams.get("endDate");
@@ -53,12 +33,12 @@ export async function GET(request: NextRequest) {
     if (search) {
       where.OR = [
         { invoiceNumber: { contains: search, mode: "insensitive" } },
-        { supplier: { name: { contains: search, mode: "insensitive" } } },
+        { customer: { name: { contains: search, mode: "insensitive" } } },
       ];
     }
 
-    if (supplierId) {
-      where.supplierId = supplierId;
+    if (customerId) {
+      where.customerId = customerId;
     }
 
     if (status) {
@@ -72,11 +52,11 @@ export async function GET(request: NextRequest) {
     }
 
     const [invoices, total] = await Promise.all([
-      prisma.importInvoice.findMany({
+      prisma.saleInvoice.findMany({
         where,
         include: {
-          supplier: {
-            select: { id: true, name: true },
+          customer: {
+            select: { id: true, name: true, phone: true },
           },
           createdBy: {
             select: { id: true, name: true, email: true },
@@ -93,7 +73,7 @@ export async function GET(request: NextRequest) {
         skip: (page - 1) * limit,
         take: limit,
       }),
-      prisma.importInvoice.count({ where }),
+      prisma.saleInvoice.count({ where }),
     ]);
 
     return NextResponse.json({
@@ -106,7 +86,7 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error("Error fetching import invoices:", error);
+    console.error("Error fetching sale invoices:", error);
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }
@@ -122,7 +102,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { supplierId, notes, items, status = "COMPLETED" } = body;
+    const { customerId, items, paymentMethod = "CASH", notes, discount = 0 } = body;
 
     if (!items || !Array.isArray(items) || items.length === 0) {
       return NextResponse.json(
@@ -131,9 +111,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate items - chỉ yêu cầu productName, quantity, unitPrice
+    // Validate items
     for (const item of items) {
-      if (!item.productName || item.quantity <= 0 || item.unitPrice <= 0) {
+      if (!item.productId || item.quantity <= 0 || item.unitPrice <= 0) {
         return NextResponse.json(
           { error: "Thông tin sản phẩm không hợp lệ" },
           { status: 400 }
@@ -145,108 +125,85 @@ export async function POST(request: NextRequest) {
 
     // Create invoice with items and update product stock in a transaction
     const result = await prisma.$transaction(async (tx) => {
-      let totalAmount = 0;
+      let subtotal = 0;
       const preparedItems = [];
 
       for (const item of items) {
         const itemTotal = item.quantity * item.unitPrice;
-        totalAmount += itemTotal;
+        subtotal += itemTotal;
 
-        let productId = item.productId;
-        let previousUnitPrice = null;
+        // Lấy giá nhập hiện tại của sản phẩm để lưu vào SaleInvoiceItem
+        const product = await tx.product.findUnique({
+          where: { id: item.productId },
+        });
 
-        // Nếu không có productId, tìm hoặc tạo sản phẩm mới
-        if (!productId) {
-          // Tìm sản phẩm theo tên (case insensitive)
-          let product = await tx.product.findFirst({
-            where: {
-              name: {
-                equals: item.productName,
-                mode: "insensitive",
-              },
-            },
-          });
+        if (!product) {
+          throw new Error(`Không tìm thấy sản phẩm: ${item.productId}`);
+        }
 
-          // Nếu không tìm thấy, tạo sản phẩm mới
-          if (!product) {
-            product = await tx.product.create({
-              data: {
-                name: item.productName,
-                sku: generateSku(item.productName),
-                slug: generateSlug(item.productName),
-                importPrice: item.unitPrice,
-                sellPrice: item.unitPrice * 1.3, // Giá bán = giá nhập * 1.3
-                stock: 0,
-                minStock: 10,
-                categoryId: item.categoryId || null,
-              },
-            });
-          } else {
-            // Lưu giá cũ trước khi cập nhật
-            previousUnitPrice = product.importPrice;
-          }
-
-          productId = product.id;
-        } else {
-          // Lấy sản phẩm hiện tại để lưu giá cũ
-          const product = await tx.product.findUnique({
-            where: { id: productId },
-          });
-          if (product) {
-            previousUnitPrice = product.importPrice;
-          }
+        // Kiểm tra tồn kho
+        if (product.stock < item.quantity) {
+          throw new Error(`Sản phẩm "${product.name}" không đủ tồn kho. Còn ${product.stock} sản phẩm.`);
         }
 
         preparedItems.push({
-          productId,
+          productId: item.productId,
           quantity: item.quantity,
           unitPrice: item.unitPrice,
-          previousUnitPrice,
+          importPrice: product.importPrice, // Lưu giá nhập tại thời điểm bán
           totalPrice: itemTotal,
         });
 
-        // Cập nhật tồn kho và giá nhập
+        // Cập nhật tồn kho
         await tx.product.update({
-          where: { id: productId },
+          where: { id: item.productId },
           data: {
-            stock: { increment: item.quantity },
-            previousImportPrice: previousUnitPrice,
-            importPrice: item.unitPrice,
+            stock: {
+              decrement: item.quantity,
+            },
           },
         });
       }
 
-      // Create import invoice
-      const importInvoice = await tx.importInvoice.create({
+      const totalAmount = subtotal - discount;
+
+      const invoice = await tx.saleInvoice.create({
         data: {
           invoiceNumber,
-          supplierId: supplierId || null,
+          customerId: customerId || null,
+          subtotal,
+          discount,
           totalAmount,
+          paymentMethod,
           notes,
-          status,
-          createdById: (session.user as any).id,
+          status: "COMPLETED",
+          createdById: session.user.id,
           items: {
             create: preparedItems,
           },
         },
         include: {
-          supplier: true,
           items: {
             include: {
-              product: true,
+              product: {
+                select: { id: true, name: true, sku: true },
+              },
             },
+          },
+          customer: {
+            select: { id: true, name: true, phone: true },
           },
         },
       });
 
-      return importInvoice;
+      return invoice;
     });
 
     return NextResponse.json(result, { status: 201 });
-  } catch (error) {
-    console.error("Error creating import invoice:", error);
+  } catch (error: any) {
+    console.error("Error creating sale invoice:", error);
     return NextResponse.json(
-      { error: "Internal server error" },
+      { error: error.message || "Internal server error" },
       { status: 500 }
     );
   }

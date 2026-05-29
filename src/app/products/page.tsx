@@ -31,6 +31,7 @@ import {
   ChevronRight,
   AlertTriangle,
   Loader2,
+  Ruler,
 } from "lucide-react";
 import {
   Select,
@@ -102,6 +103,7 @@ export default function ProductsPage() {
     stock: "",
     minStock: "10",
     description: "",
+    image: "",
   });
 
   useEffect(() => {
@@ -176,6 +178,7 @@ export default function ProductsPage() {
       stock: product.stock.toString(),
       minStock: product.minStock.toString(),
       description: product.description || "",
+      image: (product as any).imageUrl || "",
     });
     setIsDialogOpen(true);
   };
@@ -313,9 +316,17 @@ export default function ProductsPage() {
                   <TableRow key={product.id}>
                     <TableCell>
                       <div className="flex items-center gap-3">
-                        <div className="h-10 w-10 rounded-xl bg-muted flex items-center justify-center">
-                          <Package className="h-5 w-5 text-muted-foreground" />
-                        </div>
+                        {(product as any).imageUrl ? (
+                          <img
+                            src={(product as any).imageUrl}
+                            alt={product.name}
+                            className="h-10 w-10 rounded-xl object-cover"
+                          />
+                        ) : (
+                          <div className="h-10 w-10 rounded-xl bg-muted flex items-center justify-center">
+                            <Package className="h-5 w-5 text-muted-foreground" />
+                          </div>
+                        )}
                         <div>
                           <p className="font-medium">{product.name}</p>
                           {product.stock <= product.minStock && (
@@ -350,6 +361,15 @@ export default function ProductsPage() {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="rounded-xl"
+                          title="Quản lý đơn vị"
+                          onClick={() => router.push(`/products/${product.id}/units`)}
+                        >
+                          <Ruler className="h-4 w-4" />
+                        </Button>
                         <Button
                           variant="ghost"
                           size="icon"
@@ -536,6 +556,31 @@ export default function ProductsPage() {
                 }
                 className="rounded-xl"
               />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="image">URL Hình ảnh</Label>
+              <Input
+                id="image"
+                type="url"
+                value={formData.image}
+                onChange={(e) =>
+                  setFormData({ ...formData, image: e.target.value })
+                }
+                placeholder="https://example.com/image.jpg"
+                className="rounded-xl"
+              />
+              {formData.image && (
+                <div className="mt-2">
+                  <img
+                    src={formData.image}
+                    alt="Preview"
+                    className="h-24 w-24 object-cover rounded-xl border"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).style.display = 'none';
+                    }}
+                  />
+                </div>
+              )}
             </div>
             <DialogFooter>
               <Button

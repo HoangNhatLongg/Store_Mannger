@@ -55,6 +55,28 @@ async function main() {
   }
   console.log("Created categories:", categories.length);
 
+  // Create default units
+  const units = [
+    { name: "Cái", abbreviation: "cái", isBaseUnit: true },
+    { name: "Lon", abbreviation: "lon", isBaseUnit: true },
+    { name: "Chai", abbreviation: "chai", isBaseUnit: true },
+    { name: "Gói", abbreviation: "gói", isBaseUnit: true },
+    { name: "Hộp", abbreviation: "hộp", isBaseUnit: true },
+    { name: "Túi", abbreviation: "túi", isBaseUnit: true },
+    { name: "Thùng", abbreviation: "thùng", isBaseUnit: false },
+    { name: "Kg", abbreviation: "kg", isBaseUnit: true },
+    { name: "Lít", abbreviation: "lít", isBaseUnit: true },
+  ];
+
+  for (const unit of units) {
+    await prisma.unit.upsert({
+      where: { abbreviation: unit.abbreviation },
+      update: {},
+      create: unit,
+    });
+  }
+  console.log("Created units:", units.length);
+
   // Create products
   const categoryList = await prisma.category.findMany();
   const products = [

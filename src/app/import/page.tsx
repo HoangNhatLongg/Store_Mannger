@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { MainLayout } from "@/components/layout";
 import { Button } from "@/components/ui/button";
@@ -29,6 +29,12 @@ import {
   Save,
   Search,
   Package,
+  Upload,
+  X,
+  Image as ImageIcon,
+  Sparkles,
+  Check,
+  AlertCircle,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -37,11 +43,19 @@ interface Supplier {
   name: string;
 }
 
+interface Category {
+  id: string;
+  name: string;
+  slug: string;
+}
+
 interface Product {
   id: string;
   name: string;
   sku: string;
   importPrice: string;
+  categoryId?: string;
+  category?: Category;
 }
 
 interface ImportItem {
@@ -50,6 +64,8 @@ interface ImportItem {
   productName: string;
   quantity: number;
   unitPrice: number;
+  categoryId?: string;
+  categoryName?: string;
 }
 
 interface SimilarProduct {
@@ -59,14 +75,30 @@ interface SimilarProduct {
   importPrice: string;
 }
 
+interface OCRResult {
+  items: Array<{
+    productName: string;
+    quantity: number;
+    unitPrice: number;
+    category?: string;
+  }>;
+  confidence: number;
+}
+
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+const ACCEPTED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/jpg"];
+
 export default function ImportPage() {
   const router = useRouter();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Form state - chỉ dùng string để đơn giản
+  // Form state
   const [supplierId, setSupplierId] = useState<string>("");
   const [items, setItems] = useState<ImportItem[]>([
     { id: "1", productId: null, productName: "", quantity: 1, unitPrice: 0 }
@@ -76,23 +108,28 @@ export default function ImportPage() {
   const [showSimilarDialog, setShowSimilarDialog] = useState(false);
   const [similarProducts, setSimilarProducts] = useState<SimilarProduct[]>([]);
   const [tempItemId, setTempItemId] = useState<string>("");
-  const [tempProductName, setTempProductName] = useState("");
+  const [tempProductName, setTempProductName] = useState<string>("");
+
+  // OCR Dialog state
+  const [isOcrDialogOpen, setIsOcrDialogOpen] = useState(false);
+  const [isOcrProcessing, setIsOcrProcessing] = useState(false);
+  const [ocrError, setOcrError] = useState<string | null>(null);
+  const [selectedImage, setSelectedImage] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
 
   // Fetch data
-  useState(() => {
-    fetchData();
-  });
-
   async function fetchData() {
     setIsLoading(true);
     try {
-      const [suppliersRes, productsRes] = await Promise.all([
+      const [suppliersRes, productsRes, categoriesRes] = await Promise.all([
         fetch("/api/suppliers"),
-        fetch("/api/products?limit=1000")
+        fetch("/api/products?limit=1000"),
+        fetch("/api/categories")
       ]);
       
       const suppliersData = await suppliersRes.json();
       const productsData = await productsRes.json();
+      const categoriesData = await categoriesRes.json();
       
       if (Array.isArray(suppliersData)) {
         setSuppliers(suppliersData);
@@ -100,12 +137,20 @@ export default function ImportPage() {
       if (productsData.products && Array.isArray(productsData.products)) {
         setProducts(productsData.products);
       }
+      if (Array.isArray(categoriesData)) {
+        setCategories(categoriesData);
+      }
     } catch (error) {
       console.error("Error fetching data:", error);
     } finally {
       setIsLoading(false);
     }
   }
+
+  // Initial load
+  useEffect(() => {
+    fetchData();
+  }, []);
 
   function addRow() {
     setItems(prev => [
@@ -124,7 +169,6 @@ export default function ImportPage() {
     setItems(prev => prev.map(item => {
       if (item.id !== id) return item;
       
-      // Tìm exact match
       const match = products.find(p => p.name.toLowerCase() === name.toLowerCase());
       if (match) {
         return { ...item, productName: name, productId: match.id, unitPrice: parseFloat(match.importPrice) || 0 };
@@ -142,6 +186,13 @@ export default function ImportPage() {
   function updateItemPrice(id: string, price: number) {
     setItems(prev => prev.map(item =>
       item.id === id ? { ...item, unitPrice: price } : item
+    ));
+  }
+
+  function updateItemCategory(id: string, categoryId: string) {
+    const category = categories.find(c => c.id === categoryId);
+    setItems(prev => prev.map(item =>
+      item.id === id ? { ...item, categoryId, categoryName: category?.name } : item
     ));
   }
 
@@ -168,10 +219,8 @@ export default function ImportPage() {
       }
     }
 
-    // Kiểm tra sản phẩm chưa được chọn
     const uncheckedItems = validItems.filter(item => !item.productId);
     if (uncheckedItems.length > 0) {
-      // Tìm sản phẩm tương tự cho item đầu tiên
       const first = uncheckedItems[0];
       const query = first.productName.toLowerCase();
       const similar = products
@@ -187,7 +236,6 @@ export default function ImportPage() {
       }
     }
 
-    // Submit
     submitImport(validItems);
   }
 
@@ -204,6 +252,7 @@ export default function ImportPage() {
             productName: item.productName,
             quantity: item.quantity,
             unitPrice: item.unitPrice,
+            categoryId: item.categoryId || undefined,
           })),
           status: "COMPLETED",
         }),
@@ -235,6 +284,119 @@ export default function ImportPage() {
     setShowSimilarDialog(false);
   }
 
+  // Image handling
+  function handleImageSelect(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    if (!ACCEPTED_TYPES.includes(file.type)) {
+      setOcrError("Chỉ chấp nhận file ảnh (JPG, PNG, WebP)");
+      return;
+    }
+
+    // Validate file size
+    if (file.size > MAX_FILE_SIZE) {
+      setOcrError("File quá lớn. Vui lòng chọn file nhỏ hơn 10MB");
+      return;
+    }
+
+    setOcrError(null);
+    setSelectedImage(file);
+    
+    // Create preview
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      setImagePreview(e.target?.result as string);
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function clearImage() {
+    setSelectedImage(null);
+    setImagePreview(null);
+    setOcrError(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  }
+
+  async function processOCR() {
+    if (!selectedImage) return;
+
+    setIsOcrProcessing(true);
+    setOcrError(null);
+
+    try {
+      const formData = new FormData();
+      formData.append("image", selectedImage);
+
+      const res = await fetch("/api/ocr/process", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || "Có lỗi xảy ra");
+      }
+
+      const data: OCRResult = await res.json();
+
+      // Apply OCR results to form
+      if (data.items && data.items.length > 0) {
+        const newItems: ImportItem[] = data.items.map((item, index) => {
+          // Try to match product
+          const match = products.find(
+            p => p.name.toLowerCase().includes(item.productName.toLowerCase()) ||
+                 item.productName.toLowerCase().includes(p.name.toLowerCase())
+          );
+
+          // Try to match category from AI response
+          let matchedCategoryId: string | undefined;
+          if (item.category && categories.length > 0) {
+            // Try exact match first
+            const exactMatch = categories.find(
+              c => c.name.toLowerCase() === item.category?.toLowerCase()
+            );
+            if (exactMatch) {
+              matchedCategoryId = exactMatch.id;
+            } else {
+              // Try partial match
+              const partialMatch = categories.find(
+                c => c.name.toLowerCase().includes(item.category!.toLowerCase()) ||
+                     item.category!.toLowerCase().includes(c.name.toLowerCase())
+              );
+              if (partialMatch) {
+                matchedCategoryId = partialMatch.id;
+              }
+            }
+          }
+
+          return {
+            id: `ocr-${Date.now()}-${index}`,
+            productId: match?.id || null,
+            productName: item.productName,
+            quantity: item.quantity,
+            unitPrice: item.unitPrice,
+            categoryId: matchedCategoryId,
+            categoryName: matchedCategoryId ? categories.find(c => c.id === matchedCategoryId)?.name : undefined,
+          };
+        });
+
+        setItems(newItems);
+      } else {
+        setOcrError("Không tìm thấy dữ liệu hóa đơn trong ảnh");
+      }
+
+      setIsOcrDialogOpen(false);
+    } catch (error: any) {
+      setOcrError(error.message || "Có lỗi xảy ra");
+    } finally {
+      setIsOcrProcessing(false);
+    }
+  }
+
   if (isLoading) {
     return (
       <MainLayout>
@@ -259,7 +421,11 @@ export default function ImportPage() {
             <h1 className="text-3xl font-semibold">Nhập hàng</h1>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" className="rounded-xl">
+            <Button 
+              variant="outline" 
+              className="rounded-xl"
+              onClick={() => setIsOcrDialogOpen(true)}
+            >
               <Bot className="mr-2 h-4 w-4" />
               Nhận diện ảnh
             </Button>
@@ -307,6 +473,7 @@ export default function ImportPage() {
               {/* Table Header */}
               <div className="flex gap-4 px-4 py-2 bg-muted rounded-xl text-sm font-medium text-muted-foreground">
                 <div className="flex-1">Tên sản phẩm</div>
+                <div className="w-32">Danh mục</div>
                 <div className="w-20 text-center">SL</div>
                 <div className="w-32 text-right">Đơn giá</div>
                 <div className="w-28 text-right">Thành tiền</div>
@@ -325,10 +492,33 @@ export default function ImportPage() {
                         className="rounded-xl"
                       />
                       {item.productId ? (
-                        <p className="text-xs text-green-600 mt-1">Đã khớp với sản phẩm</p>
+                        <p className="text-xs text-green-600 mt-1 flex items-center gap-1">
+                          <Check className="h-3 w-3" />
+                          Đã khớp với sản phẩm
+                        </p>
                       ) : item.productName ? (
-                        <p className="text-xs text-amber-600 mt-1">Sản phẩm mới</p>
+                        <p className="text-xs text-amber-600 mt-1 flex items-center gap-1">
+                          <AlertCircle className="h-3 w-3" />
+                          Sản phẩm mới
+                        </p>
                       ) : null}
+                    </div>
+                    <div className="w-32">
+                      <Select 
+                        value={item.categoryId || ""} 
+                        onValueChange={(value) => updateItemCategory(item.id, value)}
+                      >
+                        <SelectTrigger className="rounded-xl">
+                          <SelectValue placeholder="Chọn" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {categories.map((cat) => (
+                            <SelectItem key={cat.id} value={cat.id}>
+                              {cat.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
                     <div className="w-20">
                       <Input
@@ -452,6 +642,108 @@ export default function ImportPage() {
               onClick={() => setShowSimilarDialog(false)}
             >
               Đóng
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* OCR Upload Dialog */}
+      <Dialog open={isOcrDialogOpen} onOpenChange={setIsOcrDialogOpen}>
+        <DialogContent className="rounded-2xl sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Sparkles className="h-5 w-5 text-primary" />
+              Nhận diện ảnh hóa đơn
+            </DialogTitle>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-4">
+            {/* Upload Area */}
+            {!imagePreview ? (
+              <div
+                className="border-2 border-dashed border-muted-foreground/25 rounded-2xl p-8 text-center hover:border-primary/50 transition-colors cursor-pointer"
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept={ACCEPTED_TYPES.join(",")}
+                  onChange={handleImageSelect}
+                  className="hidden"
+                />
+                <Upload className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+                <p className="text-lg font-medium">Tải lên ảnh hóa đơn</p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Kéo thả hoặc click để chọn file
+                </p>
+                <p className="text-xs text-muted-foreground mt-2">
+                  Chấp nhận: JPG, PNG, WebP (tối đa 10MB)
+                </p>
+              </div>
+            ) : (
+              <div className="relative rounded-2xl overflow-hidden bg-muted">
+                <img
+                  src={imagePreview}
+                  alt="Preview"
+                  className="w-full h-64 object-contain"
+                />
+                <Button
+                  variant="destructive"
+                  size="icon"
+                  className="absolute top-2 right-2 rounded-full"
+                  onClick={clearImage}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+            )}
+
+            {/* Error Message */}
+            {ocrError && (
+              <div className="flex items-center gap-2 p-3 bg-destructive/10 text-destructive rounded-xl">
+                <AlertCircle className="h-4 w-4" />
+                <p className="text-sm">{ocrError}</p>
+              </div>
+            )}
+
+            {/* Tips */}
+            <div className="bg-muted/50 rounded-xl p-4">
+              <p className="text-sm font-medium mb-2">Mẹo để nhận diện tốt hơn:</p>
+              <ul className="text-xs text-muted-foreground space-y-1">
+                <li>• Sử dụng ảnh rõ nét, đủ ánh sáng</li>
+                <li>• Chụp toàn bộ hóa đơn, không cắt góc</li>
+                <li>• Ưu tiên hóa đơn có chữ in, tránh chữ viết tay</li>
+              </ul>
+            </div>
+          </div>
+
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              className="flex-1 rounded-xl"
+              onClick={() => {
+                setIsOcrDialogOpen(false);
+                clearImage();
+              }}
+            >
+              Hủy
+            </Button>
+            <Button
+              className="flex-1 rounded-xl"
+              disabled={!selectedImage || isOcrProcessing}
+              onClick={processOCR}
+            >
+              {isOcrProcessing ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Đang xử lý...
+                </>
+              ) : (
+                <>
+                  <Sparkles className="mr-2 h-4 w-4" />
+                  Nhận diện
+                </>
+              )}
             </Button>
           </div>
         </DialogContent>

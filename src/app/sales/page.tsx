@@ -1,18 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { MainLayout } from "@/components/layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import {
   Dialog,
   DialogContent,
@@ -21,81 +13,349 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Plus, Search, Trash2, Minus, ShoppingCart } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Plus,
+  Search,
+  Trash2,
+  Minus,
+  ShoppingCart,
+  Loader2,
+  Package,
+  Receipt,
+  Ruler,
+} from "lucide-react";
 
-const products = [
-  { id: "1", name: "Mì Hảo Hảo", price: 6000, stock: 150 },
-  { id: "2", name: "Nước ngọt Coca", price: 15000, stock: 80 },
-  { id: "3", name: "Bánh Oreo", price: 15000, stock: 45 },
-  { id: "4", name: "Sữa tươi Vinamilk", price: 18000, stock: 60 },
-  { id: "5", name: "Bia Tiger lon", price: 25000, stock: 100 },
-  { id: "6", name: "Cà phê G7", price: 5000, stock: 200 },
-  { id: "7", name: "Nước suối Lavie", price: 5000, stock: 300 },
-  { id: "8", name: "Bánh KitKat", price: 12000, stock: 75 },
-  { id: "9", name: "Mít sấy", price: 25000, stock: 40 },
-  { id: "10", name: "Trứng gà", price: 5000, stock: 120 },
-  { id: "11", name: "Dầu ăn Meizan", price: 35000, stock: 50 },
-  { id: "12", name: "Gạo Thơm", price: 18000, stock: 200 },
-];
+interface Unit {
+  id: string;
+  name: string;
+  abbreviation: string;
+  isBaseUnit: boolean;
+}
+
+interface ProductUnit {
+  id: string;
+  unitId: string;
+  conversionQty: number;
+  price: number;
+  isDefault: boolean;
+  unit: Unit;
+}
+
+interface Product {
+  id: string;
+  name: string;
+  sku: string;
+  sellPrice: number;
+  stock: number;
+  isActive: boolean;
+  units?: ProductUnit[];
+}
 
 interface CartItem {
   id: string;
+  productId: string;
   name: string;
   price: number;
   quantity: number;
+  maxQuantity: number;
+  unitName: string;
+  unitAbbreviation: string;
 }
 
+interface Customer {
+  id: string;
+  name: string;
+  phone: string | null;
+}
+
+const formatCurrency = (value: number) => {
+  return new Intl.NumberFormat("vi-VN", {
+    style: "currency",
+    currency: "VND",
+  }).format(value);
+};
+
 export default function SalesPage() {
+  const [products, setProducts] = useState<Product[]>([]);
+  const [allProductUnits, setAllProductUnits] = useState<Record<string, ProductUnit[]>>({});
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [cart, setCart] = useState<CartItem[]>([]);
   const [isPaymentDialogOpen, setIsPaymentDialogOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  // Dialog chọn đơn vị
+  const [isUnitDialogOpen, setIsUnitDialogOpen] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [selectedUnit, setSelectedUnit] = useState<ProductUnit | null>(null);
+  
+  const [paymentData, setPaymentData] = useState({
+    customerId: "",
+    paymentMethod: "CASH",
+    cashReceived: "",
+    notes: "",
+    discount: 0,
+  });
+  const [paymentSuccess, setPaymentSuccess] = useState<{
+    invoiceNumber: string;
+    change: number;
+  } | null>(null);
 
-  const filteredProducts = products.filter((p) =>
-    p.name.toLowerCase().includes(searchTerm.toLowerCase())
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  async function fetchData() {
+    setIsLoading(true);
+    try {
+      const [productsRes, customersRes] = await Promise.all([
+        fetch("/api/products?isActive=true"),
+        fetch("/api/customers"),
+      ]);
+
+      if (productsRes.ok) {
+        const data = await productsRes.json();
+        setProducts(data.products || []);
+        
+        // Load product units cho từng sản phẩm
+        const productIds = (data.products || []).map((p: Product) => p.id);
+        const unitsPromises = productIds.map((id: string) => 
+          fetch(`/api/product-units?productId=${id}`)
+            .then(res => res.ok ? res.json() : [])
+            .then(units => ({ id, units: Array.isArray(units) ? units : [] }))
+            .catch(() => ({ id, units: [] }))
+        );
+        const unitsResults = await Promise.all(unitsPromises);
+        const unitsMap: Record<string, ProductUnit[]> = {};
+        unitsResults.forEach(({ id, units }) => {
+          unitsMap[id] = units;
+        });
+        setAllProductUnits(unitsMap);
+      }
+
+      if (customersRes.ok) {
+        const data = await customersRes.json();
+        setCustomers(Array.isArray(data) ? data : []);
+      }
+    } catch (error) {
+      console.error("Error fetching data:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  const filteredProducts = products.filter(
+    (p) =>
+      p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      p.sku.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const addToCart = (product: typeof products[0]) => {
+  const getProductPrice = (product: Product): number => {
+    const units = allProductUnits[product.id] || [];
+    const defaultUnit = units.find((u) => u.isDefault);
+    if (defaultUnit) return defaultUnit.price;
+    if (units.length > 0) return units[0].price;
+    return product.sellPrice;
+  };
+
+  const getProductUnitName = (product: Product): string => {
+    const units = allProductUnits[product.id] || [];
+    const defaultUnit = units.find((u) => u.isDefault);
+    if (defaultUnit) return defaultUnit.unit.name;
+    if (units.length > 0) return units[0].unit.name;
+    return "";
+  };
+
+  const hasMultipleUnits = (product: Product): boolean => {
+    const units = allProductUnits[product.id] || [];
+    return units.length > 1;
+  };
+
+  const handleProductClick = (product: Product) => {
+    const units = allProductUnits[product.id] || [];
+    
+    if (units.length === 0) {
+      // Không có đơn vị, thêm trực tiếp với giá mặc định
+      addToCart(product, product.sellPrice, "cái");
+    } else if (units.length === 1) {
+      // Chỉ có 1 đơn vị
+      const unit = units[0];
+      addToCart(product, unit.price, unit.unit.name);
+    } else {
+      // Nhiều đơn vị, hiện dialog chọn
+      setSelectedProduct(product);
+      const defaultUnit = units.find((u) => u.isDefault) || units[0];
+      setSelectedUnit(defaultUnit);
+      setIsUnitDialogOpen(true);
+    }
+  };
+
+  const addToCart = (
+    product: Product,
+    price: number,
+    unitName: string,
+    unitAbbreviation: string = "cái"
+  ) => {
+    if (product.stock <= 0) return;
+
+    // Tính max quantity dựa trên đơn vị
+    const units = allProductUnits[product.id] || [];
+    const baseUnit = units.find((u) => u.unit.isBaseUnit);
+    const selectedUnitInfo = units.find((u) => u.unit.name === unitName);
+    
+    let maxQty = product.stock;
+    if (baseUnit && selectedUnitInfo && !selectedUnitInfo.unit.isBaseUnit) {
+      // Nếu chọn đơn vị quy đổi (thùng), tính số thùng tối đa
+      maxQty = Math.floor(product.stock / selectedUnitInfo.conversionQty);
+    }
+
+    if (maxQty <= 0) return;
+
+    // Check nếu sản phẩm đã có trong cart với cùng đơn vị
     setCart((prev) => {
-      const existing = prev.find((item) => item.id === product.id);
+      const existing = prev.find(
+        (item) =>
+          item.productId === product.id &&
+          item.unitName === unitName
+      );
       if (existing) {
+        if (existing.quantity >= maxQty) return prev;
         return prev.map((item) =>
-          item.id === product.id
-            ? { ...item, quantity: Math.min(item.quantity + 1, product.stock) }
+          item.id === existing.id
+            ? { ...item, quantity: item.quantity + 1 }
             : item
         );
       }
-      return [...prev, { ...product, quantity: 1 }];
+      return [
+        ...prev,
+        {
+          id: `${product.id}-${unitName}-${Date.now()}`,
+          productId: product.id,
+          name: product.name,
+          price,
+          quantity: 1,
+          maxQuantity: maxQty,
+          unitName,
+          unitAbbreviation,
+        },
+      ];
     });
   };
 
-  const updateQuantity = (id: string, delta: number) => {
+  const updateQuantity = (itemId: string, delta: number) => {
     setCart((prev) =>
       prev
-        .map((item) =>
-          item.id === id
-            ? { ...item, quantity: Math.max(0, item.quantity + delta) }
-            : item
-        )
-        .filter((item) => item.quantity > 0)
+        .map((item) => {
+          if (item.id === itemId) {
+            const newQty = item.quantity + delta;
+            if (newQty <= 0) return null;
+            if (newQty > item.maxQuantity) return item;
+            return { ...item, quantity: newQty };
+          }
+          return item;
+        })
+        .filter((item) => item !== null) as CartItem[]
     );
   };
 
-  const removeFromCart = (id: string) => {
-    setCart((prev) => prev.filter((item) => item.id !== id));
+  const removeFromCart = (itemId: string) => {
+    setCart((prev) => prev.filter((item) => item.id !== itemId));
   };
 
-  const totalAmount = cart.reduce(
+  const subtotal = cart.reduce(
     (sum, item) => sum + item.price * item.quantity,
     0
   );
+  const discount = paymentData.discount || 0;
+  const totalAmount = subtotal - discount;
+  const cashReceived = parseFloat(paymentData.cashReceived) || 0;
+  const change = cashReceived - totalAmount;
 
   const handlePayment = () => {
+    setPaymentData({
+      ...paymentData,
+      cashReceived: totalAmount.toString(),
+    });
     setIsPaymentDialogOpen(true);
   };
 
-  const handleCompletePayment = () => {
-    setCart([]);
+  async function handleCompletePayment() {
+    if (cart.length === 0) return;
+
+    setIsSubmitting(true);
+    try {
+      const items = cart.map((item) => ({
+        productId: item.productId,
+        quantity: item.quantity,
+        unitPrice: item.price,
+      }));
+
+      const res = await fetch("/api/sales", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          customerId: paymentData.customerId || null,
+          paymentMethod: paymentData.paymentMethod,
+          notes: paymentData.notes,
+          discount,
+          items,
+        }),
+      });
+
+      if (!res.ok) {
+        const error = await res.json();
+        alert(error.error || "Có lỗi xảy ra");
+        return;
+      }
+
+      const invoice = await res.json();
+      setPaymentSuccess({
+        invoiceNumber: invoice.invoiceNumber,
+        change: change > 0 ? change : 0,
+      });
+      setCart([]);
+      
+      fetchData();
+    } catch (error) {
+      console.error("Error:", error);
+      alert("Có lỗi xảy ra");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  const closePaymentDialog = () => {
     setIsPaymentDialogOpen(false);
+    setPaymentSuccess(null);
+    setPaymentData({
+      customerId: "",
+      paymentMethod: "CASH",
+      cashReceived: "",
+      notes: "",
+      discount: 0,
+    });
+  };
+
+  const confirmUnitSelection = () => {
+    if (selectedProduct && selectedUnit) {
+      addToCart(
+        selectedProduct,
+        selectedUnit.price,
+        selectedUnit.unit.name,
+        selectedUnit.unit.abbreviation
+      );
+    }
+    setIsUnitDialogOpen(false);
+    setSelectedProduct(null);
+    setSelectedUnit(null);
   };
 
   return (
@@ -124,28 +384,81 @@ export default function SalesPage() {
             </div>
 
             {/* Product Grid */}
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-              {filteredProducts.map((product) => (
-                <button
-                  key={product.id}
-                  onClick={() => addToCart(product)}
-                  className="bg-card rounded-2xl p-4 text-left hover:shadow-md hover:bg-muted/50 transition-all group"
-                >
-                  <div className="aspect-square rounded-xl bg-muted/50 flex items-center justify-center mb-3 group-hover:bg-primary/10 transition-colors">
-                    <span className="text-2xl font-semibold text-muted-foreground group-hover:text-primary transition-colors">
-                      {product.name.charAt(0)}
-                    </span>
+            {isLoading ? (
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                {[...Array(8)].map((_, i) => (
+                  <div
+                    key={i}
+                    className="bg-card rounded-2xl p-4 animate-pulse"
+                  >
+                    <div className="aspect-square rounded-xl bg-muted/50 mb-3" />
+                    <div className="h-4 bg-muted/50 rounded w-3/4 mb-2" />
+                    <div className="h-5 bg-muted/50 rounded w-1/2" />
                   </div>
-                  <h3 className="font-medium text-sm line-clamp-1">{product.name}</h3>
-                  <p className="text-primary font-semibold mt-1">
-                    {product.price.toLocaleString("vi-VN")}đ
-                  </p>
-                  <Badge variant="secondary" className="mt-2 text-xs">
-                    Còn {product.stock}
-                  </Badge>
-                </button>
-              ))}
-            </div>
+                ))}
+              </div>
+            ) : filteredProducts.length === 0 ? (
+              <div className="text-center py-12 bg-card rounded-2xl">
+                <Package className="h-12 w-12 mx-auto mb-4 text-muted-foreground opacity-50" />
+                <p className="text-muted-foreground">Không tìm thấy sản phẩm</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                {filteredProducts.map((product) => {
+                  const units = allProductUnits[product.id] || [];
+                  const displayPrice = getProductPrice(product);
+                  const unitName = getProductUnitName(product);
+                  const hasMultiple = hasMultipleUnits(product);
+
+                  return (
+                    <button
+                      key={product.id}
+                      onClick={() => handleProductClick(product)}
+                      disabled={product.stock <= 0}
+                      className={`bg-card rounded-2xl p-4 text-left hover:shadow-md transition-all group relative ${
+                        product.stock <= 0
+                          ? "opacity-50 cursor-not-allowed"
+                          : "hover:bg-muted/50"
+                      }`}
+                    >
+                      {hasMultiple && (
+                        <div className="absolute top-2 right-2">
+                          <Ruler className="h-4 w-4 text-muted-foreground" />
+                        </div>
+                      )}
+                      <div className="aspect-square rounded-xl bg-muted/50 flex items-center justify-center mb-3 group-hover:bg-primary/10 transition-colors overflow-hidden">
+                        {(product as any).imageUrl ? (
+                          <img
+                            src={(product as any).imageUrl}
+                            alt={product.name}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <span className="text-2xl font-semibold text-muted-foreground group-hover:text-primary transition-colors">
+                            {product.name.charAt(0)}
+                          </span>
+                        )}
+                      </div>
+                      <h3 className="font-medium text-sm line-clamp-1">
+                        {product.name}
+                      </h3>
+                      <p className="text-primary font-semibold mt-1">
+                        {formatCurrency(displayPrice)}
+                      </p>
+                      {unitName && (
+                        <p className="text-xs text-muted-foreground">/{unitName}</p>
+                      )}
+                      <Badge
+                        variant={product.stock > 10 ? "secondary" : "destructive"}
+                        className="mt-2 text-xs"
+                      >
+                        {product.stock > 0 ? `Còn ${product.stock}` : "Hết hàng"}
+                      </Badge>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {/* Cart */}
@@ -170,33 +483,38 @@ export default function SalesPage() {
                       className="flex items-center justify-between p-3 rounded-xl bg-muted/30 hover:bg-muted/50 transition-colors"
                     >
                       <div className="flex-1 min-w-0">
-                        <p className="font-medium text-sm line-clamp-1">{item.name}</p>
+                        <p className="font-medium text-sm line-clamp-1">
+                          {item.name}
+                        </p>
                         <p className="text-xs text-muted-foreground">
-                          {item.price.toLocaleString("vi-VN")}đ
+                          {formatCurrency(item.price)}/{item.unitName}
                         </p>
                       </div>
-                      <div className="flex items-center gap-2 ml-4">
+                      <div className="flex items-center gap-1 ml-4">
                         <Button
                           variant="outline"
                           size="icon"
-                          className="h-8 w-8 rounded-lg"
+                          className="h-7 w-7 rounded-lg"
                           onClick={() => updateQuantity(item.id, -1)}
                         >
                           <Minus className="h-3 w-3" />
                         </Button>
-                        <span className="w-8 text-center font-medium">{item.quantity}</span>
+                        <span className="w-8 text-center font-medium text-sm">
+                          {item.quantity}
+                        </span>
                         <Button
                           variant="outline"
                           size="icon"
-                          className="h-8 w-8 rounded-lg"
+                          className="h-7 w-7 rounded-lg"
                           onClick={() => updateQuantity(item.id, 1)}
+                          disabled={item.quantity >= item.maxQuantity}
                         >
                           <Plus className="h-3 w-3" />
                         </Button>
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-8 w-8 rounded-lg text-destructive"
+                          className="h-7 w-7 rounded-lg text-destructive hover:text-destructive"
                           onClick={() => removeFromCart(item.id)}
                         >
                           <Trash2 className="h-3 w-3" />
@@ -207,23 +525,33 @@ export default function SalesPage() {
                 </div>
 
                 {/* Total */}
-                <div className="pt-4 border-t border-border/50">
-                  <div className="flex justify-between items-center mb-2">
+                <div className="pt-4 border-t border-border/50 space-y-2">
+                  <div className="flex justify-between items-center">
                     <span className="text-muted-foreground">Tạm tính</span>
                     <span className="text-muted-foreground">
-                      {totalAmount.toLocaleString("vi-VN")}đ
+                      {formatCurrency(subtotal)}
                     </span>
                   </div>
+                  {discount > 0 && (
+                    <div className="flex justify-between items-center text-green-600">
+                      <span>Giảm giá</span>
+                      <span>-{formatCurrency(discount)}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between items-center">
                     <span className="font-medium">Tổng cộng</span>
                     <span className="text-2xl font-bold text-primary">
-                      {totalAmount.toLocaleString("vi-VN")}đ
+                      {formatCurrency(totalAmount)}
                     </span>
                   </div>
                 </div>
 
                 {/* Payment Button */}
-                <Button className="w-full rounded-xl" size="lg" onClick={handlePayment}>
+                <Button
+                  className="w-full rounded-xl"
+                  size="lg"
+                  onClick={handlePayment}
+                >
                   Thanh toán
                 </Button>
               </>
@@ -237,42 +565,245 @@ export default function SalesPage() {
           </div>
         </div>
 
-        {/* Payment Dialog */}
-        <Dialog open={isPaymentDialogOpen} onOpenChange={setIsPaymentDialogOpen}>
-          <DialogContent className="rounded-2xl sm:max-w-[400px]">
+        {/* Unit Selection Dialog */}
+        <Dialog open={isUnitDialogOpen} onOpenChange={setIsUnitDialogOpen}>
+          <DialogContent className="rounded-2xl">
             <DialogHeader>
-              <DialogTitle>Thanh toán</DialogTitle>
+              <DialogTitle>Chọn đơn vị</DialogTitle>
             </DialogHeader>
-            <div className="space-y-6 py-4">
-              <div className="text-center">
-                <p className="text-sm text-muted-foreground">Tổng tiền</p>
-                <p className="text-4xl font-bold text-primary">
-                  {totalAmount.toLocaleString("vi-VN")}đ
-                </p>
-              </div>
-              <div className="space-y-3">
-                <div className="space-y-2">
-                  <Label>Tiền khách đưa</Label>
-                  <Input
-                    type="number"
-                    placeholder="Nhập số tiền"
-                    className="rounded-xl text-lg"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Ghi chú</Label>
-                  <Input placeholder="Ghi chú (tùy chọn)" className="rounded-xl" />
-                </div>
+            <div className="space-y-4">
+              <p className="font-medium">{selectedProduct?.name}</p>
+              <div className="space-y-2">
+                {(allProductUnits[selectedProduct?.id || ""] || []).map((unit) => (
+                  <button
+                    key={unit.id}
+                    onClick={() => setSelectedUnit(unit)}
+                    className={`w-full p-4 rounded-xl border text-left transition-all ${
+                      selectedUnit?.id === unit.id
+                        ? "border-primary bg-primary/5"
+                        : "border-border hover:border-primary/50"
+                    }`}
+                  >
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <p className="font-medium">{unit.unit.name}</p>
+                        {!unit.unit.isBaseUnit && (
+                          <p className="text-sm text-muted-foreground">
+                            1 {unit.unit.name} = {unit.conversionQty}{" "}
+                            {(allProductUnits[selectedProduct?.id || ""] || []).find(
+                              (u) => u.unit.isBaseUnit
+                            )?.unit.abbreviation || "đơn vị"}
+                          </p>
+                        )}
+                      </div>
+                      <div className="text-right">
+                        <p className="font-semibold text-primary">
+                          {formatCurrency(unit.price)}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          /{unit.unit.name}
+                        </p>
+                      </div>
+                    </div>
+                  </button>
+                ))}
               </div>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setIsPaymentDialogOpen(false)} className="rounded-xl">
+              <Button
+                variant="outline"
+                onClick={() => setIsUnitDialogOpen(false)}
+                className="rounded-xl"
+              >
                 Hủy
               </Button>
-              <Button onClick={handleCompletePayment} className="rounded-xl">
-                Hoàn thành
+              <Button
+                onClick={confirmUnitSelection}
+                disabled={!selectedUnit}
+                className="rounded-xl"
+              >
+                Thêm vào giỏ
               </Button>
             </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Payment Dialog */}
+        <Dialog open={isPaymentDialogOpen} onOpenChange={closePaymentDialog}>
+          <DialogContent className="rounded-2xl sm:max-w-[450px]">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                {paymentSuccess ? (
+                  <>
+                    <Receipt className="h-5 w-5 text-green-600" />
+                    Thanh toán thành công
+                  </>
+                ) : (
+                  "Thanh toán"
+                )}
+              </DialogTitle>
+            </DialogHeader>
+
+            {paymentSuccess ? (
+              <div className="space-y-6 py-4">
+                <div className="text-center">
+                  <p className="text-sm text-muted-foreground">Mã hóa đơn</p>
+                  <p className="text-2xl font-bold text-primary">
+                    {paymentSuccess.invoiceNumber}
+                  </p>
+                </div>
+                <div className="bg-green-50 dark:bg-green-950/20 rounded-xl p-4 text-center">
+                  <p className="text-sm text-green-600 dark:text-green-400">
+                    Tiền thừa
+                  </p>
+                  <p className="text-3xl font-bold text-green-600 dark:text-green-400">
+                    {formatCurrency(paymentSuccess.change)}
+                  </p>
+                </div>
+                <Button className="w-full rounded-xl" onClick={closePaymentDialog}>
+                  Đóng
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-6 py-4">
+                {/* Order Summary */}
+                <div className="bg-muted/30 rounded-xl p-4 space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span>Tạm tính</span>
+                    <span>{formatCurrency(subtotal)}</span>
+                  </div>
+                  {discount > 0 && (
+                    <div className="flex justify-between text-sm text-green-600">
+                      <span>Giảm giá</span>
+                      <span>-{formatCurrency(discount)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between font-medium pt-2 border-t">
+                    <span>Tổng cộng</span>
+                    <span className="text-primary">{formatCurrency(totalAmount)}</span>
+                  </div>
+                </div>
+
+                {/* Customer */}
+                <div className="space-y-2">
+                  <Label>Khách hàng (tùy chọn)</Label>
+                  <Select
+                    value={paymentData.customerId || "none"}
+                    onValueChange={(value) =>
+                      setPaymentData({
+                        ...paymentData,
+                        customerId: value === "none" ? "" : value,
+                      })
+                    }
+                  >
+                    <SelectTrigger className="rounded-xl">
+                      <SelectValue placeholder="Chọn khách hàng" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Khách lẻ</SelectItem>
+                      {customers.map((customer) => (
+                        <SelectItem key={customer.id} value={customer.id}>
+                          {customer.name}
+                          {customer.phone && ` - ${customer.phone}`}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Payment Method */}
+                <div className="space-y-2">
+                  <Label>Phương thức thanh toán</Label>
+                  <Select
+                    value={paymentData.paymentMethod}
+                    onValueChange={(value) =>
+                      setPaymentData({ ...paymentData, paymentMethod: value })
+                    }
+                  >
+                    <SelectTrigger className="rounded-xl">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="CASH">Tiền mặt</SelectItem>
+                      <SelectItem value="BANK_TRANSFER">Chuyển khoản</SelectItem>
+                      <SelectItem value="CARD">Thẻ</SelectItem>
+                      <SelectItem value="E_WALLET">Ví điện tử</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Cash Received */}
+                {paymentData.paymentMethod === "CASH" && (
+                  <div className="space-y-2">
+                    <Label>Tiền khách đưa</Label>
+                    <Input
+                      type="number"
+                      placeholder="Nhập số tiền"
+                      className="rounded-xl text-lg"
+                      value={paymentData.cashReceived}
+                      onChange={(e) =>
+                        setPaymentData({
+                          ...paymentData,
+                          cashReceived: e.target.value,
+                        })
+                      }
+                    />
+                    {change >= 0 && cashReceived > 0 && (
+                      <div className="text-sm text-green-600">
+                        Tiền thừa: {formatCurrency(change)}
+                      </div>
+                    )}
+                    {change < 0 && cashReceived > 0 && (
+                      <div className="text-sm text-destructive">
+                        Tiền thiếu: {formatCurrency(Math.abs(change))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Notes */}
+                <div className="space-y-2">
+                  <Label>Ghi chú</Label>
+                  <Input
+                    placeholder="Ghi chú (tùy chọn)"
+                    className="rounded-xl"
+                    value={paymentData.notes}
+                    onChange={(e) =>
+                      setPaymentData({ ...paymentData, notes: e.target.value })
+                    }
+                  />
+                </div>
+              </div>
+            )}
+
+            {!paymentSuccess && (
+              <DialogFooter>
+                <Button
+                  variant="outline"
+                  onClick={closePaymentDialog}
+                  className="rounded-xl"
+                >
+                  Hủy
+                </Button>
+                <Button
+                  onClick={handleCompletePayment}
+                  disabled={
+                    isSubmitting ||
+                    (paymentData.paymentMethod === "CASH" && cashReceived < totalAmount)
+                  }
+                  className="rounded-xl"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Đang xử lý...
+                    </>
+                  ) : (
+                    "Hoàn thành"
+                  )}
+                </Button>
+              </DialogFooter>
+            )}
           </DialogContent>
         </Dialog>
       </div>

@@ -15,6 +15,9 @@ import {
   ChevronRight,
   Menu,
   X,
+  Truck,
+  Ruler,
+  TrendingUp,
 } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
@@ -24,8 +27,11 @@ const navigation = [
   { name: "Dashboard", href: "/", icon: LayoutDashboard },
   { name: "Sản phẩm", href: "/products", icon: Package },
   { name: "Danh mục", href: "/categories", icon: Tags },
+  { name: "Đơn vị", href: "/units", icon: Ruler },
+  { name: "Nhà cung cấp", href: "/suppliers", icon: Truck },
   { name: "Nhập hàng", href: "/import", icon: FileText },
   { name: "Bán hàng", href: "/sales", icon: ShoppingCart },
+  { name: "Doanh thu", href: "/revenue", icon: TrendingUp },
   { name: "Tồn kho", href: "/inventory", icon: Archive },
   { name: "AI OCR", href: "/ai-ocr", icon: Bot },
   { name: "Cài đặt", href: "/settings", icon: Settings },

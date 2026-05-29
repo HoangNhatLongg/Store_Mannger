@@ -1,608 +1,281 @@
-# Store Manager - Database Documentation
+# Database Schema Documentation
 
-## Mục lục
+Tài liệu này mô tả cấu trúc cơ sở dữ liệu của Store Manager.
 
-1. [Tổng quan](#tổng-quan)
-2. [Sơ đồ Class Diagram](#sơ-đồ-class-diagram)
-3. [Mô tả các bảng](#mô-tả-các-bảng)
-4. [Quan hệ giữa các bảng](#quan-hệ-giữa-các-bảng)
-5. [Prisma Schema](#prisma-schema)
-
----
-
-## Tổng quan
-
-Hệ thống quản lý cửa hàng tạp hóa sử dụng PostgreSQL làm cơ sở dữ liệu với Prisma ORM để quản lý truy vấn. Database được thiết kế để hỗ trợ:
-
-- **Quản lý sản phẩm**: Thông tin sản phẩm, giá cả, tồn kho
-- **Quản lý danh mục**: Phân loại sản phẩm theo danh mục
-- **Hóa đơn nhập hàng**: Lưu trữ thông tin nhập hàng từ nhà cung cấp
-- **Hóa đơn bán hàng**: Lưu trữ thông tin bán hàng cho khách
-- **Quản lý người dùng**: Phân quyền và xác thực người dùng
-- **Audit Log**: Theo dõi các thay đổi trong hệ thống
-
----
-
-## Sơ đồ Class Diagram
-
-### Class Diagram Overview
-
-```plantuml
-@startuml StoreManagerClassDiagram
-
-skinparam backgroundColor #F8F9FA
-skinparam classAttributeIconSize 0
-skinparam packageStyle rectangle
-
-' Entity Classes
-class User {
-  id: String
-  email: String
-  password: String
-  name: String?
-  role: UserRole
-  createdAt: DateTime
-  updatedAt: DateTime
-  +createUser()
-  +updateUser()
-  +deleteUser()
-}
-
-class Category {
-  id: String
-  name: String
-  slug: String
-  description: String?
-  imageUrl: String?
-  isActive: Boolean
-  createdAt: DateTime
-  updatedAt: DateTime
-  +createCategory()
-  +updateCategory()
-  +deleteCategory()
-}
-
-class Product {
-  id: String
-  name: String
-  slug: String
-  sku: String
-  barcode: String?
-  description: String?
-  imageUrl: String?
-  importPrice: Decimal
-  sellPrice: Decimal
-  stock: Int
-  minStock: Int
-  isActive: Boolean
-  createdAt: DateTime
-  updatedAt: DateTime
-  +createProduct()
-  +updateStock()
-  +checkLowStock()
-}
-
-class Supplier {
-  id: String
-  name: String
-  phone: String?
-  email: String?
-  address: String?
-  isActive: Boolean
-  createdAt: DateTime
-  updatedAt: DateTime
-  +createSupplier()
-  +updateSupplier()
-}
-
-class Customer {
-  id: String
-  name: String
-  phone: String?
-  email: String?
-  address: String?
-  points: Int
-  isActive: Boolean
-  createdAt: DateTime
-  updatedAt: DateTime
-  +addPoints()
-  +redeemPoints()
-}
-
-class ImportInvoice {
-  id: String
-  invoiceNumber: String
-  totalAmount: Decimal
-  notes: String?
-  status: InvoiceStatus
-  createdAt: DateTime
-  updatedAt: DateTime
-  +createInvoice()
-  +completeInvoice()
-  +cancelInvoice()
-}
-
-class ImportInvoiceItem {
-  id: String
-  quantity: Int
-  unitPrice: Decimal
-  totalPrice: Decimal
-  createdAt: DateTime
-}
-
-class SaleInvoice {
-  id: String
-  invoiceNumber: String
-  subtotal: Decimal
-  discount: Decimal
-  totalAmount: Decimal
-  paymentMethod: PaymentMethod
-  notes: String?
-  status: InvoiceStatus
-  createdAt: DateTime
-  updatedAt: DateTime
-  +createInvoice()
-  +applyDiscount()
-  +completeSale()
-}
-
-class SaleInvoiceItem {
-  id: String
-  quantity: Int
-  unitPrice: Decimal
-  totalPrice: Decimal
-  createdAt: DateTime
-}
-
-class Setting {
-  id: String
-  key: String
-  value: String
-  type: String
-  group: String
-  isPublic: Boolean
-  createdAt: DateTime
-  updatedAt: DateTime
-  +getValue()
-  +setValue()
-}
-
-class AuditLog {
-  id: String
-  userId: String?
-  action: String
-  entity: String
-  entityId: String?
-  changes: Json?
-  ipAddress: String?
-  userAgent: String?
-  createdAt: DateTime
-}
-
-' Enums
-enum UserRole {
-  ADMIN
-  MANAGER
-  STAFF
-}
-
-enum InvoiceStatus {
-  PENDING
-  COMPLETED
-  CANCELLED
-}
-
-enum PaymentMethod {
-  CASH
-  BANK_TRANSFER
-  CARD
-  E_WALLET
-}
-
-' Relationships
-User "1" --> "N" ImportInvoice : creates
-User "1" --> "N" SaleInvoice : creates
-User "1" --> "N" AuditLog : performs
-
-Category "1" --> "N" Product : contains
-
-Supplier "1" --> "N" ImportInvoice : supplies
-
-Customer "1" --> "N" SaleInvoice : purchases
-
-ImportInvoice "1" --> "N" ImportInvoiceItem : contains
-ImportInvoiceItem "N" --> "1" Product : references
-ImportInvoiceItem "N" --> "1" ImportInvoice : belongs to
-
-SaleInvoice "1" --> "N" SaleInvoiceItem : contains
-SaleInvoiceItem "N" --> "1" Product : references
-SaleInvoiceItem "N" --> "1" SaleInvoice : belongs to
-
-@enduml
-```
-
-### Database Schema Diagram
-
-```plantuml
-@startuml StoreManagerSchema
-
-skinparam backgroundColor #F8F9FA
-skinparam componentStyle rectangle
-
-package "Core Entities" {
-  [User] as U
-  [Category] as C
-  [Product] as P
-  [Supplier] as S
-  [Customer] as CU
-}
-
-package "Invoice Entities" {
-  [ImportInvoice] as II
-  [ImportInvoiceItem] as III
-  [SaleInvoice] as SI
-  [SaleInvoiceItem] as SII
-}
-
-package "System" {
-  [Setting] as SET
-  [AuditLog] as AL
-}
-
-' Core relationships
-U --> II : "creates"
-U --> SI : "creates"
-C --> P : "categorizes"
-S --> II : "supplies"
-CU --> SI : "purchases"
-
-' Invoice relationships
-II --> III : "contains"
-III --> P : "references"
-SI --> SII : "contains"
-SII --> P : "references"
-
-' Audit
-U --> AL : "logs actions"
-
-@enduml
-```
-
----
-
-## Mô tả các bảng
-
-### 1. User (Người dùng)
-
-| Trường | Kiểu dữ liệu | Mô tả |
-|--------|---------------|--------|
-| id | String (cuid) | Khóa chính |
-| email | String | Email đăng nhập (unique) |
-| password | String | Mật khẩu (đã hash) |
-| name | String? | Tên người dùng |
-| role | UserRole | Vai trò: ADMIN, MANAGER, STAFF |
-| createdAt | DateTime | Thời gian tạo |
-| updatedAt | DateTime | Thời gian cập nhật |
-
-**Vai trò:**
-- `ADMIN`: Toàn quyền hệ thống
-- `MANAGER`: Quản lý cửa hàng
-- `STAFF`: Nhân viên bán hàng
-
----
-
-### 2. Category (Danh mục)
-
-| Trường | Kiểu dữ liệu | Mô tả |
-|--------|---------------|--------|
-| id | String (cuid) | Khóa chính |
-| name | String | Tên danh mục |
-| slug | String | Slug URL (unique) |
-| description | String? | Mô tả |
-| imageUrl | String? | URL hình ảnh |
-| isActive | Boolean | Trạng thái hoạt động |
-| createdAt | DateTime | Thời gian tạo |
-| updatedAt | DateTime | Thời gian cập nhật |
-
----
-
-### 3. Product (Sản phẩm)
-
-| Trường | Kiểu dữ liệu | Mô tả |
-|--------|---------------|--------|
-| id | String (cuid) | Khóa chính |
-| name | String | Tên sản phẩm |
-| slug | String | Slug URL (unique) |
-| sku | String | Mã SKU (unique) |
-| barcode | String? | Mã vạch (unique) |
-| description | String? | Mô tả |
-| imageUrl | String? | URL hình ảnh |
-| importPrice | Decimal(12,2) | Giá nhập |
-| sellPrice | Decimal(12,2) | Giá bán |
-| stock | Int | Số lượng tồn kho |
-| minStock | Int | Số lượng tối thiểu |
-| isActive | Boolean | Trạng thái hoạt động |
-| categoryId | String? | FK đến Category |
-| createdAt | DateTime | Thời gian tạo |
-| updatedAt | DateTime | Thời gian cập nhật |
-
-**Quan hệ:**
-- Nhiều Product thuộc về 1 Category (Many-to-One)
-- 1 Product có nhiều ImportInvoiceItem (One-to-Many)
-- 1 Product có nhiều SaleInvoiceItem (One-to-Many)
-
----
-
-### 4. Supplier (Nhà cung cấp)
-
-| Trường | Kiểu dữ liệu | Mô tả |
-|--------|---------------|--------|
-| id | String (cuid) | Khóa chính |
-| name | String | Tên nhà cung cấp |
-| phone | String? | Số điện thoại |
-| email | String? | Email |
-| address | String? | Địa chỉ |
-| isActive | Boolean | Trạng thái hoạt động |
-| createdAt | DateTime | Thời gian tạo |
-| updatedAt | DateTime | Thời gian cập nhật |
-
----
-
-### 5. Customer (Khách hàng)
-
-| Trường | Kiểu dữ liệu | Mô tả |
-|--------|---------------|--------|
-| id | String (cuid) | Khóa chính |
-| name | String | Tên khách hàng |
-| phone | String? | Số điện thoại |
-| email | String? | Email |
-| address | String? | Địa chỉ |
-| points | Int | Điểm tích lũy |
-| isActive | Boolean | Trạng thái hoạt động |
-| createdAt | DateTime | Thời gian tạo |
-| updatedAt | DateTime | Thời gian cập nhật |
-
----
-
-### 6. ImportInvoice (Hóa đơn nhập hàng)
-
-| Trường | Kiểu dữ liệu | Mô tả |
-|--------|---------------|--------|
-| id | String (cuid) | Khóa chính |
-| invoiceNumber | String | Số hóa đơn (unique) |
-| supplierId | String? | FK đến Supplier |
-| totalAmount | Decimal(15,2) | Tổng tiền |
-| notes | String? | Ghi chú |
-| status | InvoiceStatus | Trạng thái |
-| createdById | String | FK đến User |
-| createdAt | DateTime | Thời gian tạo |
-| updatedAt | DateTime | Thời gian cập nhật |
-
-**Trạng thái:**
-- `PENDING`: Đang chờ xử lý
-- `COMPLETED`: Đã hoàn thành
-- `CANCELLED`: Đã hủy
-
----
-
-### 7. ImportInvoiceItem (Chi tiết hóa đơn nhập hàng)
-
-| Trường | Kiểu dữ liệu | Mô tả |
-|--------|---------------|--------|
-| id | String (cuid) | Khóa chính |
-| importInvoiceId | String | FK đến ImportInvoice |
-| productId | String | FK đến Product |
-| quantity | Int | Số lượng nhập |
-| unitPrice | Decimal(12,2) | Đơn giá |
-| totalPrice | Decimal(15,2) | Thành tiền |
-| createdAt | DateTime | Thời gian tạo |
-
-**Ràng buộc:** Xóa cascade khi xóa ImportInvoice
-
----
-
-### 8. SaleInvoice (Hóa đơn bán hàng)
-
-| Trường | Kiểu dữ liệu | Mô tả |
-|--------|---------------|--------|
-| id | String (cuid) | Khóa chính |
-| invoiceNumber | String | Số hóa đơn (unique) |
-| customerId | String? | FK đến Customer |
-| subtotal | Decimal(15,2) | Tổng phụ |
-| discount | Decimal(15,2) | Giảm giá |
-| totalAmount | Decimal(15,2) | Tổng cộng |
-| paymentMethod | PaymentMethod | Phương thức thanh toán |
-| notes | String? | Ghi chú |
-| status | InvoiceStatus | Trạng thái |
-| createdById | String | FK đến User |
-| createdAt | DateTime | Thời gian tạo |
-| updatedAt | DateTime | Thời gian cập nhật |
-
-**Phương thức thanh toán:**
-- `CASH`: Tiền mặt
-- `BANK_TRANSFER`: Chuyển khoản
-- `CARD`: Thẻ
-- `E_WALLET`: Ví điện tử
-
----
-
-### 9. SaleInvoiceItem (Chi tiết hóa đơn bán hàng)
-
-| Trường | Kiểu dữ liệu | Mô tả |
-|--------|---------------|--------|
-| id | String (cuid) | Khóa chính |
-| saleInvoiceId | String | FK đến SaleInvoice |
-| productId | String | FK đến Product |
-| quantity | Int | Số lượng bán |
-| unitPrice | Decimal(12,2) | Đơn giá |
-| totalPrice | Decimal(15,2) | Thành tiền |
-| createdAt | DateTime | Thời gian tạo |
-
-**Ràng buộc:** Xóa cascade khi xóa SaleInvoice
-
----
-
-### 10. Setting (Cài đặt)
-
-| Trường | Kiểu dữ liệu | Mô tả |
-|--------|---------------|--------|
-| id | String (cuid) | Khóa chính |
-| key | String | Khóa cài đặt (unique) |
-| value | String | Giá trị |
-| type | String | Kiểu dữ liệu |
-| group | String | Nhóm cài đặt |
-| isPublic | Boolean | Công khai |
-| createdAt | DateTime | Thời gian tạo |
-| updatedAt | DateTime | Thời gian cập nhật |
-
----
-
-### 11. AuditLog (Nhật ký hệ thống)
-
-| Trường | Kiểu dữ liệu | Mô tả |
-|--------|---------------|--------|
-| id | String (cuid) | Khóa chính |
-| userId | String? | FK đến User |
-| action | String | Hành động |
-| entity | String | Entity bị tác động |
-| entityId | String? | ID của entity |
-| changes | Json? | Các thay đổi |
-| ipAddress | String? | IP người dùng |
-| userAgent | String? | User Agent |
-| createdAt | DateTime | Thời gian tạo |
-
----
-
-## Quan hệ giữa các bảng
-
-### Sơ đồ ERD dạng text
+## Entity Relationship Diagram
 
 ```
-┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│    User     │────<│ImportInvoice│     │  Supplier   │
-└─────────────┘     └─────────────┘     └─────────────┘
-       │                   │                   │
-       │                   │                   │
-       │              ┌─────────────┐          │
-       │              │ImportInvoice│          │
-       │              │    Item     │          │
-       │              └─────────────┘          │
-       │                   │                   │
-       │                   ▼                   │
-       │              ┌─────────────┐         │
-       │              │   Product    │<────────┘
-       │              └─────────────┘
-       │                   │
+┌─────────────┐       ┌─────────────┐       ┌─────────────┐
+│    User     │──────<│ImportInvoice│──────<│  Supplier   │
+└─────────────┘       └─────────────┘       └─────────────┘
+       │                     │
+       │                     │
+       ▼                     ▼
+┌─────────────┐       ┌─────────────────────┐
+│SaleInvoice  │──────<│SaleInvoiceItem       │
+└─────────────┘       └─────────────────────┘
+       │                     │
+       │                     ▼
        │              ┌─────────────┐
-       │              │SaleInvoice  │
-       │              │    Item     │
-       │              └─────────────┘
-       │                   │
-       │                   ▼
-       │              ┌─────────────┐     ┌─────────────┐
-       └─────────────>│ SaleInvoice │────<│  Customer   │
-                      └─────────────┘     └─────────────┘
-
-┌─────────────┐     ┌─────────────┐
-│  Category    │────<│   Product    │
-└─────────────┘     └─────────────┘
-
-┌─────────────┐
-│   Setting   │
-└─────────────┘
-
-┌─────────────┐
-│  AuditLog   │
-└─────────────┘
+       ▼              │   Product   │
+┌─────────────┐       └─────────────┘
+│  Customer   │              ▲
+└─────────────┘              │
+                             │
+              ┌──────────────┼──────────────┐
+              ▼              ▼              ▼
+       ┌─────────────┐ ┌───────────┐ ┌─────────────┐
+       │  Category   │ │   Unit    │ │ProductUnit  │
+       └─────────────┘ └───────────┘ └─────────────┘
 ```
 
-### Chi tiết quan hệ
+## Tables
 
-| Quan hệ | Loại | Mô tả |
-|---------|------|--------|
-| User -> ImportInvoice | 1:N | Một User có thể tạo nhiều ImportInvoice |
-| User -> SaleInvoice | 1:N | Một User có thể tạo nhiều SaleInvoice |
-| User -> AuditLog | 1:N | Một User có thể tạo nhiều AuditLog |
-| Category -> Product | 1:N | Một Category có nhiều Product |
-| Product -> ImportInvoiceItem | 1:N | Một Product có nhiều ImportInvoiceItem |
-| Product -> SaleInvoiceItem | 1:N | Một Product có nhiều SaleInvoiceItem |
-| Supplier -> ImportInvoice | 1:N | Một Supplier có nhiều ImportInvoice |
-| Customer -> SaleInvoice | 1:N | Một Customer có nhiều SaleInvoice |
-| ImportInvoice -> ImportInvoiceItem | 1:N | Một ImportInvoice có nhiều ImportInvoiceItem |
-| SaleInvoice -> SaleInvoiceItem | 1:N | Một SaleInvoice có nhiều SaleInvoiceItem |
+### 1. Users - Người dùng
 
----
+| Column | Type | Constraints | Mô tả |
+|---|---|---|---|
+| id | VARCHAR(25) | PK, DEFAULT cuid() | ID người dùng |
+| email | VARCHAR(255) | UNIQUE, NOT NULL | Email đăng nhập |
+| password | VARCHAR(255) | NOT NULL | Mật khẩu (đã hash) |
+| name | VARCHAR(255) | | Tên hiển thị |
+| role | ENUM | DEFAULT STAFF | Vai trò: ADMIN, MANAGER, STAFF |
+| createdAt | TIMESTAMP | DEFAULT NOW() | Ngày tạo |
+| updatedAt | TIMESTAMP | | Ngày cập nhật |
 
-## Prisma Schema
+### 2. Categories - Danh mục sản phẩm
 
-### File: `prisma/schema.prisma`
+| Column | Type | Constraints | Mô tả |
+|---|---|---|---|
+| id | VARCHAR(25) | PK | ID danh mục |
+| name | VARCHAR(255) | NOT NULL | Tên danh mục |
+| slug | VARCHAR(255) | UNIQUE | Slug URL |
+| description | TEXT | | Mô tả |
+| imageUrl | VARCHAR(500) | | URL hình ảnh |
+| isActive | BOOLEAN | DEFAULT TRUE | Trạng thái hoạt động |
+| createdAt | TIMESTAMP | | Ngày tạo |
+| updatedAt | TIMESTAMP | | Ngày cập nhật |
 
-```prisma
-// Xem chi tiết tại: prisma/schema.prisma
+### 3. Products - Sản phẩm
 
-generator client {
-  provider = "prisma-client-js"
-}
+| Column | Type | Constraints | Mô tả |
+|---|---|---|---|
+| id | VARCHAR(25) | PK | ID sản phẩm |
+| name | VARCHAR(255) | NOT NULL | Tên sản phẩm |
+| slug | VARCHAR(255) | UNIQUE | Slug URL |
+| sku | VARCHAR(100) | UNIQUE | Mã sản phẩm |
+| barcode | VARCHAR(100) | UNIQUE | Mã vạch |
+| description | TEXT | | Mô tả |
+| imageUrl | VARCHAR(500) | | URL hình ảnh |
+| importPrice | DECIMAL(12,2) | NOT NULL | Giá nhập |
+| previousImportPrice | DECIMAL(12,2) | | Giá nhập trước đó |
+| sellPrice | DECIMAL(12,2) | NOT NULL | Giá bán |
+| previousSellPrice | DECIMAL(12,2) | | Giá bán trước đó |
+| stock | INT | DEFAULT 0 | Số lượng tồn kho |
+| minStock | INT | DEFAULT 10 | Tồn kho tối thiểu |
+| isActive | BOOLEAN | DEFAULT TRUE | Trạng thái |
+| categoryId | VARCHAR(25) | FK | ID danh mục |
+| createdAt | TIMESTAMP | | Ngày tạo |
+| updatedAt | TIMESTAMP | | Ngày cập nhật |
 
-datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
-}
+### 4. Units - Đơn vị tính
 
-// Models: User, Category, Product, Supplier, Customer, 
-//         ImportInvoice, ImportInvoiceItem, 
-//         SaleInvoice, SaleInvoiceItem, Setting, AuditLog
+| Column | Type | Constraints | Mô tả |
+|---|---|---|---|
+| id | VARCHAR(25) | PK | ID đơn vị |
+| name | VARCHAR(100) | NOT NULL | Tên: Lon, Thùng, Chai, Kg |
+| abbreviation | VARCHAR(20) | UNIQUE | Viết tắt: lon, thung, chai, kg |
+| isBaseUnit | BOOLEAN | DEFAULT TRUE | Là đơn vị cơ bản |
+| createdAt | TIMESTAMP | | Ngày tạo |
 
-// Enums: UserRole, InvoiceStatus, PaymentMethod
-```
+### 5. ProductUnits - Liên kết sản phẩm - đơn vị
 
----
+| Column | Type | Constraints | Mô tả |
+|---|---|---|---|
+| id | VARCHAR(25) | PK | ID |
+| productId | VARCHAR(25) | FK, NOT NULL | ID sản phẩm |
+| unitId | VARCHAR(25) | FK, NOT NULL | ID đơn vị |
+| conversionQty | INT | DEFAULT 1 | Số lượng quy đổi (1 thùng = 24 lon) |
+| price | DECIMAL(12,2) | NOT NULL | Giá theo đơn vị |
+| isDefault | BOOLEAN | DEFAULT FALSE | Là đơn vị mặc định |
+| createdAt | TIMESTAMP | | Ngày tạo |
+
+**Unique constraint**: (productId, unitId)
+
+### 6. Suppliers - Nhà cung cấp
+
+| Column | Type | Constraints | Mô tả |
+|---|---|---|---|
+| id | VARCHAR(25) | PK | ID nhà cung cấp |
+| name | VARCHAR(255) | NOT NULL | Tên |
+| phone | VARCHAR(20) | | Số điện thoại |
+| email | VARCHAR(255) | | Email |
+| address | TEXT | | Địa chỉ |
+| isActive | BOOLEAN | DEFAULT TRUE | Trạng thái |
+| createdAt | TIMESTAMP | | Ngày tạo |
+| updatedAt | TIMESTAMP | | Ngày cập nhật |
+
+### 7. Customers - Khách hàng
+
+| Column | Type | Constraints | Mô tả |
+|---|---|---|---|
+| id | VARCHAR(25) | PK | ID khách hàng |
+| name | VARCHAR(255) | NOT NULL | Tên |
+| phone | VARCHAR(20) | | Số điện thoại |
+| email | VARCHAR(255) | | Email |
+| address | TEXT | | Địa chỉ |
+| points | INT | DEFAULT 0 | Điểm tích lũy |
+| isActive | BOOLEAN | DEFAULT TRUE | Trạng thái |
+| createdAt | TIMESTAMP | | Ngày tạo |
+| updatedAt | TIMESTAMP | | Ngày cập nhật |
+
+### 8. ImportInvoices - Hóa đơn nhập hàng
+
+| Column | Type | Constraints | Mô tả |
+|---|---|---|---|
+| id | VARCHAR(25) | PK | ID hóa đơn |
+| invoiceNumber | VARCHAR(100) | UNIQUE | Số hóa đơn |
+| supplierId | VARCHAR(25) | FK | ID nhà cung cấp |
+| totalAmount | DECIMAL(15,2) | NOT NULL | Tổng tiền |
+| notes | TEXT | | Ghi chú |
+| status | ENUM | DEFAULT PENDING | Trạng thái: PENDING, COMPLETED, CANCELLED |
+| createdById | VARCHAR(25) | FK, NOT NULL | Người tạo |
+| createdAt | TIMESTAMP | | Ngày tạo |
+| updatedAt | TIMESTAMP | | Ngày cập nhật |
+
+### 9. ImportInvoiceItems - Chi tiết nhập hàng
+
+| Column | Type | Constraints | Mô tả |
+|---|---|---|---|
+| id | VARCHAR(25) | PK | ID |
+| importInvoiceId | VARCHAR(25) | FK, NOT NULL | ID hóa đơn nhập |
+| productId | VARCHAR(25) | FK, NOT NULL | ID sản phẩm |
+| quantity | INT | NOT NULL | Số lượng |
+| unitPrice | DECIMAL(12,2) | NOT NULL | Đơn giá |
+| previousUnitPrice | DECIMAL(12,2) | | Giá trước đó |
+| totalPrice | DECIMAL(15,2) | NOT NULL | Thành tiền |
+| createdAt | TIMESTAMP | | Ngày tạo |
+
+### 10. SaleInvoices - Hóa đơn bán hàng
+
+| Column | Type | Constraints | Mô tả |
+|---|---|---|---|
+| id | VARCHAR(25) | PK | ID hóa đơn |
+| invoiceNumber | VARCHAR(100) | UNIQUE | Số hóa đơn |
+| customerId | VARCHAR(25) | FK | ID khách hàng |
+| subtotal | DECIMAL(15,2) | NOT NULL | Tổng phụ |
+| discount | DECIMAL(15,2) | DEFAULT 0 | Giảm giá |
+| totalAmount | DECIMAL(15,2) | NOT NULL | Tổng tiền |
+| paymentMethod | ENUM | DEFAULT CASH | Thanh toán: CASH, BANK_TRANSFER, CARD, E_WALLET |
+| notes | TEXT | | Ghi chú |
+| status | ENUM | DEFAULT COMPLETED | Trạng thái: PENDING, COMPLETED, CANCELLED |
+| createdById | VARCHAR(25) | FK, NOT NULL | Người tạo |
+| createdAt | TIMESTAMP | | Ngày tạo |
+| updatedAt | TIMESTAMP | | Ngày cập nhật |
+
+### 11. SaleInvoiceItems - Chi tiết bán hàng
+
+| Column | Type | Constraints | Mô tả |
+|---|---|---|---|
+| id | VARCHAR(25) | PK | ID |
+| saleInvoiceId | VARCHAR(25) | FK, NOT NULL | ID hóa đơn bán |
+| productId | VARCHAR(25) | FK, NOT NULL | ID sản phẩm |
+| quantity | INT | NOT NULL | Số lượng |
+| unitPrice | DECIMAL(12,2) | NOT NULL | Đơn giá bán |
+| importPrice | DECIMAL(12,2) | NOT NULL | Giá nhập tại thời điểm bán |
+| totalPrice | DECIMAL(15,2) | NOT NULL | Thành tiền |
+| createdAt | TIMESTAMP | | Ngày tạo |
+
+### 12. Settings - Cài đặt hệ thống
+
+| Column | Type | Constraints | Mô tả |
+|---|---|---|---|
+| id | VARCHAR(25) | PK | ID |
+| key | VARCHAR(100) | UNIQUE | Key cài đặt |
+| value | TEXT | NOT NULL | Giá trị |
+| type | VARCHAR(50) | DEFAULT string | Kiểu dữ liệu |
+| group | VARCHAR(50) | DEFAULT general | Nhóm cài đặt |
+| isPublic | BOOLEAN | DEFAULT FALSE | Công khai |
+| createdAt | TIMESTAMP | | Ngày tạo |
+| updatedAt | TIMESTAMP | | Ngày cập nhật |
+
+### 13. AuditLogs - Nhật ký hệ thống
+
+| Column | Type | Constraints | Mô tả |
+|---|---|---|---|
+| id | VARCHAR(25) | PK | ID |
+| userId | VARCHAR(25) | | Người thực hiện |
+| action | VARCHAR(50) | NOT NULL | Hành động: CREATE, UPDATE, DELETE |
+| entity | VARCHAR(50) | NOT NULL | Entity bị tác động |
+| entityId | VARCHAR(25) | | ID entity |
+| changes | JSONB | | Chi tiết thay đổi |
+| ipAddress | VARCHAR(50) | | IP người dùng |
+| userAgent | TEXT | | User Agent |
+| createdAt | TIMESTAMP | | Thời gian |
+
+## Enums
+
+### UserRole
+- `ADMIN` - Quản trị viên
+- `MANAGER` - Quản lý
+- `STAFF` - Nhân viên
+
+### InvoiceStatus
+- `PENDING` - Đang xử lý
+- `COMPLETED` - Hoàn thành
+- `CANCELLED` - Đã hủy
+
+### PaymentMethod
+- `CASH` - Tiền mặt
+- `BANK_TRANSFER` - Chuyển khoản
+- `CARD` - Thẻ
+- `E_WALLET` - Ví điện tử
 
 ## Indexes
 
-Các index được tạo tự động:
+Các indexes được tạo tự động:
 
-| Bảng | Index | Mục đích |
-|------|-------|----------|
-| User | email (unique) | Tìm kiếm nhanh theo email |
-| Category | slug (unique) | Tìm kiếm nhanh theo slug |
-| Product | slug (unique) | Tìm kiếm nhanh theo slug |
-| Product | sku (unique) | Tìm kiếm nhanh theo SKU |
-| Product | barcode (unique) | Tìm kiếm nhanh theo barcode |
-| ImportInvoice | invoiceNumber (unique) | Tìm kiếm nhanh theo số hóa đơn |
-| SaleInvoice | invoiceNumber (unique) | Tìm kiếm nhanh theo số hóa đơn |
-| Setting | key (unique) | Tìm kiếm nhanh theo khóa cài đặt |
+- Primary keys trên tất cả các bảng
+- Unique indexes trên: email (users), slug (categories, products), sku (products), barcode (products)
+- Unique constraint trên: invoiceNumber (import_invoices, sale_invoices), key (settings)
+- Unique constraint trên: (productId, unitId) trong product_units
 
----
+## Relationships
 
-## Migrations
+### User relationships
+- User -> ImportInvoice (1:N)
+- User -> SaleInvoice (1:N)
 
-### Chạy migrations
+### Category relationships
+- Category -> Product (1:N)
 
-```bash
-# Tạo migration mới
-npm run db:migrate
+### Product relationships
+- Product -> Category (N:1)
+- Product -> ImportInvoiceItem (1:N)
+- Product -> SaleInvoiceItem (1:N)
+- Product -> ProductUnit (1:N)
 
-# Push schema xuống database (dev only)
-npm run db:push
+### Unit relationships
+- Unit -> ProductUnit (1:N)
 
-# Tạo Prisma Client
-npm run db:generate
+### Supplier relationships
+- Supplier -> ImportInvoice (1:N)
 
-# Mở Prisma Studio
-npm run db:studio
-```
+### Customer relationships
+- Customer -> SaleInvoice (1:N)
 
-### Seed data
+### Invoice relationships
+- ImportInvoice -> User (N:1)
+- ImportInvoice -> Supplier (N:1)
+- ImportInvoice -> ImportInvoiceItem (1:N)
+- SaleInvoice -> User (N:1)
+- SaleInvoice -> Customer (N:1)
+- SaleInvoice -> SaleInvoiceItem (1:N)
 
-```bash
-# Chạy seed data
-npm run db:seed
-```
+## Notes
 
----
-
-## Cập nhật lần cuối
-
-**Ngày tạo:** $(date +"%d/%m/%Y")
-**Phiên bản:** 1.0.0
+1. **Decimal precision**: Sử dụng DECIMAL(12,2) cho giá, DECIMAL(15,2) cho tổng tiền
+2. **Soft delete**: Không có soft delete, xóa trực tiếp hoặc qua cascade
+3. **Audit logging**: Tất cả thay đổi được ghi log vào bảng audit_logs
+4. **Timestamps**: Mặc định sử dụng timezone UTC
+5. **Stock management**: Stock được cập nhật khi nhập hàng và bán hàng
